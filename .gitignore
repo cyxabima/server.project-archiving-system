@@ -1,0 +1,36 @@
+# --- Node.js Core ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+package-lock.json
+
+# --- Kanel (Generated Types) ---
+# If you want to generate types fresh on every environment, ignore the output folder.
+# Common default is 'src/models' or 'src/database/models'.
+# src/database/models/
+# *.kanel.ts
+
+# --- Environment & Secrets ---
+.env
+.env.local
+.env.development.local
+.env.production.local
+*.pem
+*.key
+
+
+# --- Multer & File Uploads ---
+# Prevents test uploads from being pushed to GitHub
+uploads/
+public/uploads/
+temp/
+!uploads/.gitkeep
+
+# --- OS & IDE Files ---
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+lazygit
+yazi
