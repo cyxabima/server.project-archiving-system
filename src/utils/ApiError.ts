@@ -10,12 +10,11 @@ class ApiError extends Error {
     this.errorType = errorType;
     this.name = "ApiError";
 
-    // Only works in V8 give the stack trace of error 
+    // Only works in V8 give the stack trace of error
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, ApiError);
     }
   }
-
 }
 
 export default ApiError;

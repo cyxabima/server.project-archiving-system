@@ -1,6 +1,5 @@
 import { Pool } from "pg";
-import 'dotenv/config';
-
+import "dotenv/config";
 
 const pool = new Pool({
   //  connectionString: process.env.DATABASE_URL,
@@ -15,9 +14,9 @@ const pool = new Pool({
   maxLifetimeSeconds: 60
 });
 
-pool.on('error', (err, client) => {
-  console.error('Unexpected error on idle client', err)
-  process.exit(-1)
+pool.on("error", (err, client) => {
+  console.error("Unexpected error on idle client", err);
+  process.exit(-1);
 });
 
 // i am writing simple example for writing sql for future refernecnce
@@ -27,6 +26,4 @@ pool.on('error', (err, client) => {
 //   console.log('user:', res.rows[0])
 // })();
 
-
 export default pool;
-

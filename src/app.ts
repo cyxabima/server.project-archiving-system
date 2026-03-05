@@ -1,15 +1,15 @@
 import express, { Request, Response } from "express";
-import cors from 'cors'
-import cookieParser from 'cookie-parser'
+import cors from "cors";
+import cookieParser from "cookie-parser";
 import ApiResponse from "./utils/ApiResponse.js";
 import { HealthData } from "./types/utilsTypes.js";
 
 const corsOptions = {
-  origin: ['http://localhost:3000', '*'],
-  methods: ['Get', 'POST', "PUT", "DELETE", "PATCH"],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true, // for cookies
-}
+  origin: ["http://localhost:3000", "*"],
+  methods: ["Get", "POST", "PUT", "DELETE", "PATCH"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true // for cookies
+};
 const app = express();
 
 app.use(express.json({ limit: "16kb" }));
@@ -27,9 +27,7 @@ app.get("/healthz", (_: Request, res: Response) => {
     timestamp: new Date().toISOString()
   };
 
-  return res.status(200).json(
-    new ApiResponse<HealthData>(200, healthData, "Server is healthy")
-  );
+  return res.status(200).json(new ApiResponse<HealthData>(200, healthData, "Server is healthy"));
 });
 
-export default app
+export default app;

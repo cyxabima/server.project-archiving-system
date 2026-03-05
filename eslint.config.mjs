@@ -9,15 +9,15 @@ export default tseslint.config(
   prettierConfig, // Disables ESLint rules that conflict with Prettier
   {
     plugins: {
-      prettier: prettierPlugin,
+      prettier: prettierPlugin
     },
     rules: {
       "prettier/prettier": "error", // Marks formatting issues as red-line errors
-      "no-console": "warn",        // Good for long-term projects
-      "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
-    },
+      "no-console": "warn", // Good for long-term projects
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }]
+    }
   },
   {
-    ignores: ["dist/**", "node_modules/**", "src/models/**"], // Ignore generated files
+    ignores: ["dist/**", "node_modules/**", "src/db/types/**", ".kanelrc.cjs"] // Ignore generated files
   }
 );
