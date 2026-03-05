@@ -1,6 +1,8 @@
-import express from "express";
+import express, { Request, Response } from "express";
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
+import ApiResponse from "./utils/ApiResponse.js";
+import { HealthData } from "./types/utilsTypes.js";
 
 const corsOptions = {
   origin: ['http://localhost:3000', '*'],
@@ -17,5 +19,17 @@ app.use(cors(corsOptions));
 
 // here i will defined custom error middleware
 
+// health endpoint
+app.get("/healthz", (_: Request, res: Response) => {
+  const healthData: HealthData = {
+    status: "ok",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  };
+
+  return res.status(200).json(
+    new ApiResponse<HealthData>(200, healthData, "Server is healthy")
+  );
+});
 
 export default app
