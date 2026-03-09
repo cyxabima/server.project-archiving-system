@@ -1,0 +1,10 @@
+-- Up Migration
+CREATE TABLE USERS (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_name VARCHAR(10) NOT NULL UNIQUE,
+  email VARCHAR(20) NOT NULL UNIQUE,
+  password VARCHAR(225) NOT NULL
+);
+-- Down Migration
+
+DROP TABLE IF EXISTS USERS;

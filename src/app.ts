@@ -3,6 +3,8 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import ApiResponse from "./utils/ApiResponse.js";
 import { HealthData } from "./types/utilsTypes.js";
+import userRouter from "./routes/user.router.js";
+import { errorHandler } from "./middleware/error.middleware.js";
 
 const corsOptions = {
   origin: ["http://localhost:3000", "*"],
@@ -17,7 +19,12 @@ app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 app.use(cookieParser());
 app.use(cors(corsOptions));
 
-// here i will defined custom error middleware
+// here i will attached all the routers
+app.use("/api/v1/users", userRouter);
+
+
+
+
 
 // health endpoint
 app.get("/healthz", (_: Request, res: Response) => {
@@ -29,5 +36,8 @@ app.get("/healthz", (_: Request, res: Response) => {
 
   return res.status(200).json(new ApiResponse<HealthData>(200, healthData, "Server is healthy"));
 });
+
+// custom Middleware
+app.use(errorHandler);
 
 export default app;

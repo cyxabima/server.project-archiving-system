@@ -4,81 +4,61 @@
 import { z } from 'zod';
 
 /** Identifier type for public.users */
-export type UsersId = number & { __brand: 'public.users' };
+export type UsersId = string & { __brand: 'public.users' };
 
 /** Represents the table public.users */
 export default interface Users {
   id: UsersId;
 
-  full_name: string;
+  user_name: string;
 
   email: string;
 
   password: string;
-
-  role: string | null;
-
-  created_at: Date | null;
 }
 
 /** Represents the initializer for the table public.users */
 export interface UsersInitializer {
-  /** Default value: nextval('users_id_seq'::regclass) */
+  /** Default value: gen_random_uuid() */
   id?: UsersId;
 
-  full_name: string;
+  user_name: string;
 
   email: string;
 
   password: string;
-
-  /** Default value: 'student'::character varying */
-  role?: string | null;
-
-  /** Default value: CURRENT_TIMESTAMP */
-  created_at?: Date | null;
 }
 
 /** Represents the mutator for the table public.users */
 export interface UsersMutator {
   id?: UsersId;
 
-  full_name?: string;
+  user_name?: string;
 
   email?: string;
 
   password?: string;
-
-  role?: string | null;
-
-  created_at?: Date | null;
 }
 
-export const usersId = z.number() as unknown as z.Schema<UsersId>;
+export const usersId = z.uuid() as unknown as z.Schema<UsersId>;
 
 export const users = z.object({
   id: usersId,
-  full_name: z.string(),
+  user_name: z.string(),
   email: z.string(),
   password: z.string(),
-  role: z.string().nullable(),
-  created_at: z.date().nullable(),
 }) as unknown as z.Schema<Users>;
 
 export const usersInitializer = z.object({
   id: usersId.optional(),
-  full_name: z.string(),
+  user_name: z.string(),
   email: z.string(),
   password: z.string(),
-  role: z.string().optional().nullable(),
-  created_at: z.date().optional().nullable(),
 }) as unknown as z.Schema<UsersInitializer>;
 
 export const usersMutator = z.object({
   id: usersId.optional(),
-  full_name: z.string().optional(),
+  user_name: z.string().optional(),
   email: z.string().optional(),
   password: z.string().optional(),
-  role: z.string().optional().nullable(),
-  created_at: z.date().optional().nullable(),
 }) as unknown as z.Schema<UsersMutator>;
