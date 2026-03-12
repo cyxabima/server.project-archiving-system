@@ -5,11 +5,11 @@ import ApiResponse from "../utils/ApiResponse.js";
 
 export async function createUser(req: Request, res: Response, next: NextFunction) {
 
-  const { userName, email, password } = req.body;
-  if ([userName, email, password].some((field) => !field)) {
-    return next(new ApiError(422, "Unpocessable Entity", "All fields are required"));
-  }
-
+  const { userName, email, password, userType } = req.body;
+  // if ([userName, email, password, userType].some((field) => !field)) {
+  //   return next(new ApiError(422, "Unpocessable Entity", "All fields are required"));
+  // }
+  //
 
   const emailExists = await pool.query(`Select 1 from Users Where email = $1`, [email]);
   if (emailExists.rowCount) {
