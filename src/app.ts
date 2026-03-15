@@ -22,10 +22,6 @@ app.use(cors(corsOptions));
 // here i will attached all the routers
 app.use("/api/v1/users", userRouter);
 
-
-
-
-
 // health endpoint
 app.get("/healthz", (_: Request, res: Response) => {
   const healthData: HealthData = {
