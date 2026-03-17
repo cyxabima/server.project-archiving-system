@@ -1,15 +1,15 @@
 -- Up Migration
 ALTER TABLE admins 
-  DROP COLUMN IF EXISTS deparment;
+  DROP COLUMN IF EXISTS department;
 
 ALTER TABLE admins 
-  ADD COLUMN deparment_id UUID REFERENCES departments(id) ON DELETE SET NULL;
+  ADD COLUMN department_id UUID REFERENCES departments(id) ON DELETE SET NULL;
 
 ALTER TABLE admins 
   ADD CONSTRAINT check_admin_level
   check(
-  (admin_level = 1 AND deparment_id is NULL) OR
-  (admin_level =2 AND deparment_id is NOT NULL)
+  (admin_level = 1 AND department_id is NULL) OR
+  (admin_level =2 AND department_id is NOT NULL)
     );
 
 -- Down Migration
