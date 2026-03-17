@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { createAdmin } from "../controllers/user.controller.js";
+import { createAdmin, addFaculty } from "../controllers/user.controller.js";
 
 const userRouter = Router();
-userRouter.post("/", createAdmin);
-
+userRouter.post("/createAdmin", createAdmin);
+userRouter.post("/addFaculty", addFaculty);
 export default userRouter;
