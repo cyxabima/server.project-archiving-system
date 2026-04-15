@@ -29,13 +29,13 @@ export async function createAdmin(req: Request, res: Response, next: NextFunctio
 
     const userQuery = `
             INSERT INTO users (user_name, email, password, user_type)
-            VALUES ($1, $2, $3, 'admin') RETURNING id, user_name, email, user_type`;
+            VALUES ($1, $2, $3, 'admin') RETURNING id, user_name AS "userName", email, user_type AS "userType"`;
     const userRes = await client.query(userQuery, [userName, email, password]);
     const newUserId = userRes.rows[0].id;
 
     const adminQuery = `
             INSERT INTO admins (id, department_id, admin_level) 
-            VALUES ($1, $2, $3) RETURNING department_id, admin_level`;
+            VALUES ($1, $2, $3) RETURNING department_id AS "departmentId", admin_level as "adminLevel"`;
     const adminRes = await client.query(adminQuery, [newUserId, departmentId, adminLevel]);
 
     const adminData = { ...userRes.rows[0], ...adminRes.rows[0] };
@@ -104,4 +104,9 @@ export async function addFaculty(req: Request, res: Response, next: NextFunction
   } finally {
     client.release();
   }
+}
+
+export async function addStaff(req: Request, res: Response, next: NextFunction) {
+
+
 }

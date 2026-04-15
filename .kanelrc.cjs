@@ -1,4 +1,5 @@
 const { generateZodSchemas } = require('kanel-zod');
+const { generateIndexFile } = require('kanel');
 require('dotenv').config();
 /** @type {import('kanel').Config} */
 module.exports = {
@@ -23,5 +24,5 @@ module.exports = {
     'pg_catalog.numeric': 'number',
     'pg_catalog.timestamptz': 'Date',
   },
-  preRenderHooks: [generateZodSchemas],
+  preRenderHooks: [generateZodSchemas, generateIndexFile],
 };

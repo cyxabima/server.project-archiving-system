@@ -15,6 +15,10 @@ export default interface Users {
   email: string;
 
   password: string;
+
+  user_type: string;
+
+  created_at: Date;
 }
 
 /** Represents the initializer for the table public.users */
@@ -27,6 +31,11 @@ export interface UsersInitializer {
   email: string;
 
   password: string;
+
+  user_type: string;
+
+  /** Default value: CURRENT_TIMESTAMP */
+  created_at?: Date;
 }
 
 /** Represents the mutator for the table public.users */
@@ -38,6 +47,10 @@ export interface UsersMutator {
   email?: string;
 
   password?: string;
+
+  user_type?: string;
+
+  created_at?: Date;
 }
 
 export const usersId = z.uuid() as unknown as z.Schema<UsersId>;
@@ -47,6 +60,8 @@ export const users = z.object({
   user_name: z.string(),
   email: z.string(),
   password: z.string(),
+  user_type: z.string(),
+  created_at: z.date(),
 }) as unknown as z.Schema<Users>;
 
 export const usersInitializer = z.object({
@@ -54,6 +69,8 @@ export const usersInitializer = z.object({
   user_name: z.string(),
   email: z.string(),
   password: z.string(),
+  user_type: z.string(),
+  created_at: z.date().optional(),
 }) as unknown as z.Schema<UsersInitializer>;
 
 export const usersMutator = z.object({
@@ -61,4 +78,6 @@ export const usersMutator = z.object({
   user_name: z.string().optional(),
   email: z.string().optional(),
   password: z.string().optional(),
+  user_type: z.string().optional(),
+  created_at: z.date().optional(),
 }) as unknown as z.Schema<UsersMutator>;
