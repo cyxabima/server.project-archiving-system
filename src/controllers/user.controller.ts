@@ -4,6 +4,10 @@ import pool from "../db/index.js";
 import ApiResponse from "../utils/ApiResponse.js";
 
 export async function createAdmin(req: Request, res: Response, next: NextFunction) {
+  if (!req.body) {
+    return next(new ApiError(422, "Unprocessable Entity", "Body is missing"))
+  }
+
   const { userName, email, password, departmentId, adminLevel } = req.body;
 
   if ([userName, email, password].some((field) => !field)) {
@@ -110,3 +114,6 @@ export async function addStaff(req: Request, res: Response, next: NextFunction) 
 
 
 }
+
+// TODO: there are some error to resolve 1st of all in api error message is not showing in reposnse 
+// TODO: if body is required and clinet is not sending we want show error in response currently it is doing this only for createAdmin  
