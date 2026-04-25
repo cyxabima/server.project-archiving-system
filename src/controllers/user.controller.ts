@@ -3,13 +3,9 @@ import bcrypt from "bcryptjs";
 import pool from "../db/index.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
+import { DbErrorCodes, DatabaseError } from "../utils/DbError.js";
 
 const SALT_ROUNDS = 12;
-
-// PostgreSQL Error Code;
-// 23503 : Foreign Key Voilation
-// 23505 : Unique Value Voilation
-// 23514 : Not Null Voilation
 
 export async function createAdmin(req: Request, res: Response, next: NextFunction) {
 
@@ -48,14 +44,16 @@ export async function createAdmin(req: Request, res: Response, next: NextFunctio
     await client.query("COMMIT");
 
     return res.status(201).json(new ApiResponse(201, adminData, "Admin created successfully"));
-  } catch (error: any) {
+  } catch (err: unknown) {
 
     await client.query("ROLLBACK");
 
-    if (error.code === '23505') {
+    const error = err as DatabaseError
+
+    if (error.code === DbErrorCodes.UNIQUE_VIOLATION) {
       return next(new ApiError(409, "Conflict", "User ID or Email already exists"));
     }
-    if (error.code === '23503') {
+    if (error.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) {
       return next(new ApiError(409, "Conflict", "The specified department abbreviation does not exist"));
     }
 
@@ -103,12 +101,15 @@ export async function addFaculty(req: Request, res: Response, next: NextFunction
 
     return res.status(201).json(new ApiResponse(201, facultyData, "Faculty added successfully"));
 
-  } catch (error: any) {
+  } catch (err: unknown) {
     await client.query("ROLLBACK");
-    if (error.code === '23505') {
+
+    const error = err as DatabaseError
+
+    if (error.code === DbErrorCodes.UNIQUE_VIOLATION) {
       return next(new ApiError(409, "Conflict", "User ID or Email already exists"));
     }
-    if (error.code === '23503') {
+    if (error.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) {
       return next(new ApiError(409, "Conflict", "The specified department abbreviation does not exist"));
     }
 
@@ -155,18 +156,21 @@ export async function addStaff(req: Request, res: Response, next: NextFunction) 
     await client.query("COMMIT");
 
     return res.status(201).json(new ApiResponse(201, staffData, "Staff added successfully"));
-  } catch (error: any) {
+  } catch (err: unknown) {
     await client.query("ROLLBACK");
-    if (error.code === '23505') {
+    
+    const error = err as DatabaseError
+
+    if (error.code === DbErrorCodes.UNIQUE_VIOLATION) {
       return next(new ApiError(409, "Conflict", "User ID or Email already exists"));
     }
-    if (error.code === '23503') {
+    if (error.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) {
       return next(new ApiError(409, "Conflict", "The specified department abbreviation does not exist"));
     }
 
     console.error("Transaction Error:", error);
     return next(new ApiError(500, "Internal Server Error", "Database transaction failed"));
-    
+
   } finally {
     client.release();
   }

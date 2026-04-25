@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import ApiError from "../utils/ApiError.js";
 import pool from "../db/index.js";
 import ApiResponse from "../utils/ApiResponse.js";
+import { DbErrorCodes, DatabaseError } from "../utils/DbError.js";
 
 export async function addDepartment(req: Request, res: Response, next: NextFunction) {
 
@@ -33,10 +34,12 @@ export async function addDepartment(req: Request, res: Response, next: NextFunct
 
         return res.status(201).json(new ApiResponse(201, deptRes.rows[0], "Department Added Successfully."));
     }   
-    catch (error: any) {
+    catch (err: unknown) {
         await client.query("ROLLBACK");
-        
-        if (error.code === '23505') { 
+
+        const error = err as DatabaseError
+
+        if (error.code === DbErrorCodes.UNIQUE_VIOLATION) { 
             return next(new ApiError(409, "Conflict", "Department name or abbreviation already exists"));
         }
         
@@ -89,10 +92,12 @@ export async function updateDepartment(req: Request, res: Response, next: NextFu
         await client.query("COMMIT");        
         return res.status(200).json(new ApiResponse(200, result.rows[0], "Department updated successfully"));
     } 
-    catch (error: any) {
+    catch (err: unknown) {
         await client.query("ROLLBACK");
+
+        const error = err as DatabaseError;
         
-        if (error.code === '23505') {
+        if (error.code === DbErrorCodes.UNIQUE_VIOLATION) {
             return next(new ApiError(409, "Conflict", "A Department with this Abbreviation already exists"));
         } 
         
