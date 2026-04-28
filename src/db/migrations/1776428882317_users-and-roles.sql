@@ -1,39 +1,40 @@
 -- Up Migration
-CREATE TABLE Users (
-    userID VARCHAR(20) PRIMARY KEY,
-    userName VARCHAR(100) NOT NULL,
-    userEmail VARCHAR(100) UNIQUE NOT NULL,
-    userContactNo VARCHAR(20),
+CREATE TABLE users (
+    user_id VARCHAR(20) PRIMARY KEY,
+    user_name VARCHAR(100) NOT NULL,
+    user_email VARCHAR(100) UNIQUE NOT NULL,
+    user_contact_no VARCHAR(20),
     password VARCHAR(255) NOT NULL,
-    deptAbbreviation VARCHAR(10) NOT NULL,
-    CONSTRAINT fk_user_dept FOREIGN KEY (deptAbbreviation)
-    REFERENCES Department(deptAbbreviation)
+    dept_abbreviation VARCHAR(10) NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    CONSTRAINT fk_user_dept FOREIGN KEY (dept_abbreviation)
+    REFERENCES department(dept_abbreviation) ON UPDATE CASCADE
 );
 
-CREATE TABLE Admin (
-    userID VARCHAR(20) PRIMARY KEY,
-    adminLvl INT CHECK (adminLvl IN (1, 2)),
-    CONSTRAINT fk_admin_user FOREIGN KEY (userID) 
-    REFERENCES Users(userID) ON DELETE CASCADE
+CREATE TABLE admin (
+    user_id VARCHAR(20) PRIMARY KEY,
+    admin_lvl INT CHECK (admin_lvl IN (1, 2)),
+    CONSTRAINT fk_admin_user FOREIGN KEY (user_id) 
+    REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE CASCADE
 );
 
-CREATE TABLE Faculty (
-    userID VARCHAR(20) PRIMARY KEY,
+CREATE TABLE faculty (
+    user_id VARCHAR(20) PRIMARY KEY,
     designation VARCHAR(50) NOT NULL,
-    areaOfResearch VARCHAR(150),
-    CONSTRAINT fk_faculty_user FOREIGN KEY (userID) 
-    REFERENCES Users(userID) ON DELETE CASCADE
+    area_of_research VARCHAR(150),
+    CONSTRAINT fk_faculty_user FOREIGN KEY (user_id) 
+    REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE CASCADE
 );
 
-CREATE TABLE Staff (
-    userID VARCHAR(20) PRIMARY KEY,
-    jobTitle VARCHAR(50) NOT NULL,
-    CONSTRAINT fk_staff_user FOREIGN KEY (userID) 
-    REFERENCES Users(userID) ON DELETE CASCADE
+CREATE TABLE staff (
+    user_id VARCHAR(20) PRIMARY KEY,
+    job_title VARCHAR(50) NOT NULL,
+    CONSTRAINT fk_staff_user FOREIGN KEY (user_id) 
+    REFERENCES users(user_id) ON UPDATE CASCADE ON DELETE CASCADE
 );
 
 -- Down Migration
-DROP TABLE IF EXISTS Staff;
-DROP TABLE IF EXISTS Faculty;
-DROP TABLE IF EXISTS Admin;
-DROP TABLE IF EXISTS Users;
+DROP TABLE IF EXISTS staff;
+DROP TABLE IF EXISTS faculty;
+DROP TABLE IF EXISTS admin;
+DROP TABLE IF EXISTS users;
