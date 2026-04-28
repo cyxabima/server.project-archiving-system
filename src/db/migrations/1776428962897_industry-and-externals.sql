@@ -1,21 +1,21 @@
 -- Up Migration
-CREATE TABLE Industry (
-    industryID VARCHAR(20) PRIMARY KEY,
-    industryName VARCHAR(150) NOT NULL,
+CREATE TABLE industry (
+    industry_id VARCHAR(20) PRIMARY KEY,
+    industry_name VARCHAR(150) UNIQUE NOT NULL,
     location VARCHAR(200),
-    industrytype VARCHAR(100),
-    industryEmail VARCHAR(100)
+    industry_type VARCHAR(100),
+    industry_email VARCHAR(100) UNIQUE
 );
 
-CREATE TABLE External_Superv (
-    extEmail VARCHAR(100) PRIMARY KEY,
-    extName VARCHAR(100) NOT NULL,
-    extDesignation VARCHAR(100),
-    industryID VARCHAR(20) NOT NULL,
-    CONSTRAINT fk_ext_ind FOREIGN KEY (industryID) 
-    REFERENCES Industry(industryID)
+CREATE TABLE external_superv (
+    ext_email VARCHAR(100) PRIMARY KEY,
+    ext_name VARCHAR(100) NOT NULL,
+    ext_designation VARCHAR(100),
+    industry_id VARCHAR(20) NOT NULL,
+    CONSTRAINT fk_ext_ind FOREIGN KEY (industry_id) 
+    REFERENCES industry(industry_id) ON UPDATE CASCADE
 );
 
 -- Down Migration
-DROP TABLE IF EXISTS External_Superv;
-DROP TABLE IF EXISTS Industry;
+DROP TABLE IF EXISTS external_superv;
+DROP TABLE IF EXISTS industry;
