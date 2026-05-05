@@ -4,7 +4,7 @@ import cookieParser from "cookie-parser";
 import ApiResponse from "./utils/ApiResponse.js";
 import { HealthData } from "./types/utilsTypes.js";
 import userRouter from "./routes/user.router.js";
-import authRouter from "./routes/auth.router.js"; 
+import authRouter from "./routes/auth.router.js";
 import departmentRouter from "./routes/department.router.js";
 import { errorHandler } from "./middleware/error.middleware.js";
 import domainRouter from "./routes/domain.router.js";
@@ -25,8 +25,8 @@ app.use(cookieParser());
 app.use(cors(corsOptions));
 
 // routers
-app.use("/api/v1/auth", authRouter); 
-app.use("/api/v1/users", userRouter); 
+app.use("/api/v1/auth", authRouter);
+app.use("/api/v1/users", userRouter);
 app.use("/api/v1/departments", departmentRouter);
 app.use("/api/v1/domains", domainRouter);
 app.use("/api/v1/projects", projectRouter);
