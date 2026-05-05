@@ -12,7 +12,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
     return next(new ApiError(422, "Unprocessable Entity", "Email and password are required"));
   }
 
-  const client = await pool.connect()
+  const client = await pool.connect();
 
   try {
     const query = `
@@ -31,7 +31,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
       LEFT JOIN staff s ON u.user_id = s.user_id
       WHERE u.user_email = $1;
     `;
-    
+
     const result = await client.query(query, [email]);
 
     if (result.rowCount === 0) {
@@ -49,11 +49,11 @@ export async function login(req: Request, res: Response, next: NextFunction) {
       return next(new ApiError(401, "Unauthorized", "Invalid email or password"));
     }
 
-    const tokenPayload = { 
-      userId: user.user_id, 
+    const tokenPayload = {
+      userId: user.user_id,
       role: user.role,
       dept: user.dept_abbreviation,
-      adminLevel: user.admin_lvl || null  // if not available then assigning null
+      adminLevel: user.admin_lvl || null // if not available then assigning null
     };
 
     const token = jwt.sign(tokenPayload, process.env.JWT_SECRET as string, { expiresIn: "1d" });
@@ -61,12 +61,10 @@ export async function login(req: Request, res: Response, next: NextFunction) {
     delete user.password;
 
     return res.status(200).json(new ApiResponse(200, { token, user }, "Login successful"));
-
   } catch (error) {
     console.error("Login Error:", error);
     return next(new ApiError(500, "Internal Server Error", "Login failed"));
+  } finally {
+    client.release();
   }
-  finally{
-    client.release()
-  }
-} 
+}

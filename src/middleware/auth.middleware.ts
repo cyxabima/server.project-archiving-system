@@ -34,7 +34,7 @@ export const isAdmin = (req: AuthRequest, res: Response, next: NextFunction) => 
     return next(new ApiError(401, "Unauthorized", "Authentication required"));
   }
 
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== "admin") {
     return next(new ApiError(403, "Forbidden", "Access denied. Admin privileges required."));
   }
 
