@@ -46,3 +46,34 @@ export async function createGrant(req: Request, res: Response, next: NextFunctio
         client.release();
     }
 }
+
+export async function updateGrant(req: Request, res: Response, next: NextFunction) {
+    if (!req.body || Object.keys(req.body).length === 0){
+        return next(new ApiError(422, "Unprocessable Entity", "Body is missing"));
+    }
+    const { projectId, grantName } = req.params; 
+    const { recievedDate, grantAmount, industryId } = req.body;
+    const client = await pool.connect();
+
+    try {
+        const query = `
+            UPDATE grants 
+            SET recieved_date = COALESCE($1, recieved_date), grant_amount = COALESCE($2, grant_amount), 
+                industry_id = COALESCE($3, industry_id)
+            WHERE project_id = $4 AND grant_name = $5 RETURNING *;
+        `;
+        const result = await client.query(query, [recievedDate, grantAmount, industryId, projectId, grantName]);
+        
+        if (result.rowCount === 0){
+            return next(new ApiError(404, "Not Found", "Grant not found"));
+        }
+        return res.status(200).json(new ApiResponse(200, result.rows[0], "Grant updated successfully"));
+    
+    } catch (err: any) {
+        if (err.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) return next(new ApiError(409, "Conflict", "Industry ID does not exist"));
+        return next(new ApiError(500, "Database Error", "Failed to update grant"));
+    
+    } finally {
+        client.release();
+    }
+}

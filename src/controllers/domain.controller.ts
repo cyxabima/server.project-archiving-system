@@ -45,6 +45,33 @@ export async function createDomain(req: Request, res: Response, next: NextFuncti
     }
 }
 
+export async function updateDomain(req: Request, res: Response, next: NextFunction) {
+    if (!req.body || Object.keys(req.body).length === 0){
+      return next(new ApiError(422, "Unprocessable Entity", "Body is missing"));
+    }
+    const { domainId } = req.params;
+    const { domainName, domainDescription } = req.body;
+    const client = await pool.connect();
+
+    try {
+        const query = `
+            UPDATE domains 
+            SET domain_name = COALESCE($1, domain_name), domain_description = COALESCE($2, domain_description)
+            WHERE domain_id = $3 RETURNING *;
+        `;
+        const result = await client.query(query, [domainName, domainDescription, domainId]);
+        
+        if (result.rowCount === 0){
+          return next(new ApiError(404, "Not Found", "Domain not found"));
+        }
+        return res.status(200).json(new ApiResponse(200, result.rows[0], "Domain updated successfully"));
+    } catch (err) {
+        return next(new ApiError(500, "Database Error", "Failed to update domain"));
+    } finally {
+        client.release();
+    }
+}
+
 // GET /api/v1/domains
 export async function getAllDomains(req: Request, res: Response, next: NextFunction) {
   try {
