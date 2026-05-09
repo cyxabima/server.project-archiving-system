@@ -1,5 +1,10 @@
 import { Router } from "express";
-import {createDomain,updateDomain, getAllDomains, getDomainsByDept } from "../controllers/domain.controller.js";
+import {
+  createDomain,
+  updateDomain,
+  getAllDomains,
+  getDomainsByDept
+} from "../controllers/domain.controller.js";
 import { verifyToken, isAdmin } from "../middleware/auth.middleware.js";
 
 const router = Router();
