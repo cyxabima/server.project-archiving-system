@@ -12,6 +12,7 @@ import projectRouter from "./routes/project.router.js";
 import industryRouter from "./routes/industry.router.js";
 import externalRouter from "./routes/external.router.js";
 import grantRouter from "./routes/grant.router.js";
+import studentRouter from "./routes/student.router.js"
 
 const corsOptions = {
   origin: ["http://localhost:3000", "*"],
@@ -37,6 +38,8 @@ app.use("/api/v1/domains", domainRouter);
 app.use("/api/v1/industries", industryRouter);
 app.use("/api/v1/externals", externalRouter);
 app.use("/api/v1/grants", grantRouter);
+app.use("/api/v1/students", studentRouter);
+
 
 // health endpoint
 app.get("/healthz", (_: Request, res: Response) => {
