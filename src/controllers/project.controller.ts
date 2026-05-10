@@ -55,3 +55,43 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch projects"));
   }
 }
+
+export async function listProjects(req: Request, res: Response, next: NextFunction) {
+    const limitParam = req.query.limit as string;
+    const offsetParam = req.query.offset as string;
+
+    try {
+        let dataQuery = `SELECT * FROM projects ORDER BY project_id DESC`;
+        const countQuery = `SELECT COUNT(*) FROM projects`;
+        
+        const queryParams: number[] = [];
+
+        if (limitParam !== undefined && offsetParam !== undefined) {
+            const limit = parseInt(limitParam, 10);
+            const offset = parseInt(offsetParam, 10);
+
+            if (!isNaN(limit) && !isNaN(offset)) {
+                dataQuery += ` LIMIT $1 OFFSET $2`;
+                queryParams.push(limit, offset);
+            }
+        }
+
+        const [dataResult, countResult] = await Promise.all([
+            pool.query(dataQuery, queryParams),
+            pool.query(countQuery)
+        ]);
+
+        const totalRecords = parseInt(countResult.rows[0].count, 10);
+
+        const responsePayload = {
+            total: totalRecords,
+            returned: dataResult.rowCount,
+            data: dataResult.rows
+        };
+
+        return res.status(200).json(new ApiResponse(200, responsePayload, "Projects retrieved successfully"));
+    } catch (err: unknown) {
+        console.error("Project Retrieval Error:", err);
+        return next(new ApiError(500, "Database Error", "Failed to retrieve projects"));
+    }
+}
