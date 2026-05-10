@@ -4,8 +4,8 @@ import { verifyToken } from "../middleware/auth.middleware.js";
 
 const router = Router();
 
-// filter is embedded within controller
-router.get("/", verifyToken, getProjects);
-router.get("/", verifyToken, listProjects);
+// filter is embedded within controller getProjects
+router.get("/getProjects", verifyToken, getProjects);
+router.get("/pageProjects", verifyToken, listProjects);
 
 export default router;
