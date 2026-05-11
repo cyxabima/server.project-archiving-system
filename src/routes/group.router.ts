@@ -7,6 +7,6 @@ const router = Router();
 
 router.post("/", verifyToken, isAdmin, createGroup);
 router.patch("/:groupId", verifyToken, isAdmin, updateGroup);
-router.get("/getGroups", verifyToken, getGroups)
+router.get("/getGroups", verifyToken, getGroups);
 
 export default router;

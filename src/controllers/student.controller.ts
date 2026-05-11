@@ -103,7 +103,7 @@ export async function getStudents(req: Request, res: Response, next: NextFunctio
       queryParams.push(req.query.batch);
       paramCounter++;
     }
-    
+
     queryText += ` ORDER BY seat_no ASC;`;
 
     const result = await pool.query(queryText, queryParams);

@@ -16,7 +16,6 @@ export async function createIndustry(req: Request, res: Response, next: NextFunc
   }
 
   try {
-
     const query = `
             INSERT INTO industry (industry_name, location, industry_type, industry_email)
             VALUES ($1, $2, $3, $4) 
@@ -96,7 +95,9 @@ export async function getIndustries(req: Request, res: Response, next: NextFunct
 
     const result = await pool.query(queryText, queryParams);
 
-    return res.status(200).json(new ApiResponse(200, result.rows, "Industries fetched successfully"));
+    return res
+      .status(200)
+      .json(new ApiResponse(200, result.rows, "Industries fetched successfully"));
   } catch (error) {
     console.error("Error fetching industries:", error);
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch industries"));

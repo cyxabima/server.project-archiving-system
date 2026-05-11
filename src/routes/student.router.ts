@@ -6,6 +6,6 @@ const router = Router();
 
 router.post("/", verifyToken, isAdmin, createStudent);
 router.patch("/:seatno", verifyToken, isAdmin, updateStudent);
-router.get("/getStudents", verifyToken, getStudents)
+router.get("/getStudents", verifyToken, getStudents);
 
 export default router;

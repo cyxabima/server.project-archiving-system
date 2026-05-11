@@ -243,7 +243,7 @@ export async function getUsers(req: Request, res: Response, next: NextFunction) 
     // Filter = Active Status
     if (req.query.isActive !== undefined) {
       queryText += ` AND is_active = $${paramCounter}`;
-      queryParams.push(req.query.isActive === 'true');
+      queryParams.push(req.query.isActive === "true");
       paramCounter++;
     }
 

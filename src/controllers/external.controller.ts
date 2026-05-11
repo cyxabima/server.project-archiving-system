@@ -17,9 +17,7 @@ export async function createExternal(req: Request, res: Response, next: NextFunc
     );
   }
 
-
   try {
-
     const query = `
             INSERT INTO external_superv (ext_email, ext_name, ext_designation, industry_id)
             VALUES ($1, $2, $3, $4) 
@@ -98,7 +96,9 @@ export async function getExternals(req: Request, res: Response, next: NextFuncti
 
     const result = await pool.query(queryText, queryParams);
 
-    return res.status(200).json(new ApiResponse(200, result.rows, "External supervisors fetched successfully"));
+    return res
+      .status(200)
+      .json(new ApiResponse(200, result.rows, "External supervisors fetched successfully"));
   } catch (error) {
     console.error("Error fetching external supervisors:", error);
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch external supervisors"));

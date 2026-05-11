@@ -19,9 +19,7 @@ export async function createGrant(req: Request, res: Response, next: NextFunctio
     return next(new ApiError(422, "Unprocessable Entity", "All grant fields are required"));
   }
 
-
   try {
-
     const query = `
             INSERT INTO grants (project_id, grant_name, recieved_date, grant_amount, industry_id)
             VALUES ($1, $2, $3, $4, $5) 

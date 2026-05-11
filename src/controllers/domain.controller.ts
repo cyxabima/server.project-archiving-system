@@ -21,9 +21,7 @@ export async function createDomain(req: Request, res: Response, next: NextFuncti
     );
   }
 
-
   try {
-
     const query = `
             INSERT INTO domains (domain_name, domain_description, dept_abbreviation)
             VALUES ($1, $2, $3) 

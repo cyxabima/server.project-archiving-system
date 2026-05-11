@@ -16,7 +16,6 @@ export async function addDepartment(req: Request, res: Response, next: NextFunct
     return next(new ApiError(422, "Unprocessable Entity", "All fields are required"));
   }
 
-
   try {
     const deptQuery = `
             INSERT INTO department (dept_abbreviation, dept_name)
@@ -32,7 +31,6 @@ export async function addDepartment(req: Request, res: Response, next: NextFunct
       .status(201)
       .json(new ApiResponse(201, deptRes.rows[0], "Department Added Successfully."));
   } catch (err: unknown) {
-
     const error = err as DatabaseError;
 
     if (error.code === DbErrorCodes.UNIQUE_VIOLATION) {
@@ -41,7 +39,7 @@ export async function addDepartment(req: Request, res: Response, next: NextFunct
 
     console.error("Transaction Error", error);
     return next(new ApiError(500, "DATABASE FAILED", "Failed to execute Query"));
-  } 
+  }
 }
 
 export async function updateDepartment(req: Request, res: Response, next: NextFunction) {
@@ -59,7 +57,6 @@ export async function updateDepartment(req: Request, res: Response, next: NextFu
       new ApiError(400, "Bad Request", "Please provide a name or abbreviation to change.")
     );
   }
-
 
   try {
     const updateQuery = `
@@ -83,7 +80,6 @@ export async function updateDepartment(req: Request, res: Response, next: NextFu
       .status(200)
       .json(new ApiResponse(200, result.rows[0], "Department updated successfully"));
   } catch (err: unknown) {
-
     const error = err as DatabaseError;
 
     if (error.code === DbErrorCodes.UNIQUE_VIOLATION) {
@@ -119,7 +115,9 @@ export async function getDepartments(req: Request, res: Response, next: NextFunc
 
     const result = await pool.query(queryText, queryParams);
 
-    return res.status(200).json(new ApiResponse(200, result.rows, "Departments fetched successfully"));
+    return res
+      .status(200)
+      .json(new ApiResponse(200, result.rows, "Departments fetched successfully"));
   } catch (error) {
     console.error("Error fetching departments:", error);
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch departments"));
