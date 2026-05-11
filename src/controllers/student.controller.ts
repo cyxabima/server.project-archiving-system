@@ -18,15 +18,13 @@ export async function createStudent(req: Request, res: Response, next: NextFunct
     );
   }
 
-  const client = await pool.connect();
-
   try {
     const query = `
             INSERT INTO students (seat_no, std_name, std_email, batch, project_id)
             VALUES ($1, $2, $3, $4, $5) 
             RETURNING seat_no AS "seatNo", std_name AS "stdName", std_email AS "stdEmail";
         `;
-    const result = await client.query(query, [seatNo, stdName, stdEmail, batch]);
+    const result = await pool.query(query, [seatNo, stdName, stdEmail, batch]);
 
     return res.status(201).json(new ApiResponse(201, result.rows[0], "Student added successfully"));
   } catch (err: unknown) {
@@ -43,8 +41,6 @@ export async function createStudent(req: Request, res: Response, next: NextFunct
 
     console.error("Student Creation Error:", error);
     return next(new ApiError(500, "Database Error", "Failed to add student"));
-  } finally {
-    client.release();
   }
 }
 
@@ -57,8 +53,6 @@ export async function updateStudent(req: Request, res: Response, next: NextFunct
   const { seatNo } = req.params;
   const { stdName, stdEmail, batch } = req.body;
 
-  const client = await pool.connect();
-
   try {
     const query = `
             UPDATE students 
@@ -68,7 +62,7 @@ export async function updateStudent(req: Request, res: Response, next: NextFunct
             WHERE seat_no = $5 
             RETURNING seat_no AS "seatNo", std_name AS "stdName";
         `;
-    const result = await client.query(query, [stdName, stdEmail, batch, seatNo]);
+    const result = await pool.query(query, [stdName, stdEmail, batch, seatNo]);
 
     if (result.rowCount === 0) {
       return next(new ApiError(404, "Not Found", "Student not found"));
@@ -89,7 +83,34 @@ export async function updateStudent(req: Request, res: Response, next: NextFunct
 
     console.error("Student Update Error:", error);
     return next(new ApiError(500, "Database Error", "Failed to update student"));
-  } finally {
-    client.release();
+  }
+}
+
+export async function getStudents(req: Request, res: Response, next: NextFunction) {
+  try {
+    let queryText = `
+      SELECT seat_no, std_name, std_email, batch
+      FROM students
+      WHERE 1=1
+    `;
+
+    const queryParams: any[] = [];
+    let paramCounter = 1;
+
+    // Filter = Batch Year
+    if (req.query.batch) {
+      queryText += ` AND batch = $${paramCounter}`;
+      queryParams.push(req.query.batch);
+      paramCounter++;
+    }
+
+    queryText += ` ORDER BY seat_no ASC;`;
+
+    const result = await pool.query(queryText, queryParams);
+
+    return res.status(200).json(new ApiResponse(200, result.rows, "Students fetched successfully"));
+  } catch (error) {
+    console.error("Error fetching students:", error);
+    return next(new ApiError(500, "Internal Server Error", "Failed to fetch students"));
   }
 }
