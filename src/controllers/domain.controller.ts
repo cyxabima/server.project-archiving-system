@@ -21,24 +21,20 @@ export async function createDomain(req: Request, res: Response, next: NextFuncti
     );
   }
 
-  const client = await pool.connect();
 
   try {
-    await client.query("BEGIN");
 
     const query = `
             INSERT INTO domains (domain_name, domain_description, dept_abbreviation)
             VALUES ($1, $2, $3) 
             RETURNING domain_id AS "domainId", domain_name AS "domainName";
         `;
-    const result = await client.query(query, [domainName, domainDescription, deptAbbreviation]);
+    const result = await pool.query(query, [domainName, domainDescription, deptAbbreviation]);
 
-    await client.query("COMMIT");
     return res
       .status(201)
       .json(new ApiResponse(201, result.rows[0], "Domain created successfully"));
   } catch (err: unknown) {
-    await client.query("ROLLBACK");
     const error = err as DatabaseError;
 
     if (error.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) {
@@ -49,8 +45,6 @@ export async function createDomain(req: Request, res: Response, next: NextFuncti
 
     console.error("Domain Creation Error:", error);
     return next(new ApiError(500, "Database Error", "Failed to create domain"));
-  } finally {
-    client.release();
   }
 }
 
@@ -60,7 +54,6 @@ export async function updateDomain(req: Request, res: Response, next: NextFuncti
   }
   const { domainId } = req.params;
   const { domainName, domainDescription } = req.body;
-  const client = await pool.connect();
 
   try {
     const query = `
@@ -68,7 +61,7 @@ export async function updateDomain(req: Request, res: Response, next: NextFuncti
             SET domain_name = COALESCE($1, domain_name), domain_description = COALESCE($2, domain_description)
             WHERE domain_id = $3 RETURNING *;
         `;
-    const result = await client.query(query, [domainName, domainDescription, domainId]);
+    const result = await pool.query(query, [domainName, domainDescription, domainId]);
 
     if (result.rowCount === 0) {
       return next(new ApiError(404, "Not Found", "Domain not found"));
@@ -78,8 +71,6 @@ export async function updateDomain(req: Request, res: Response, next: NextFuncti
       .json(new ApiResponse(200, result.rows[0], "Domain updated successfully"));
   } catch (err) {
     return next(new ApiError(500, "Database Error", "Failed to update domain"));
-  } finally {
-    client.release();
   }
 }
 

@@ -17,24 +17,20 @@ export async function createExternal(req: Request, res: Response, next: NextFunc
     );
   }
 
-  const client = await pool.connect();
 
   try {
-    await client.query("BEGIN");
 
     const query = `
             INSERT INTO external_superv (ext_email, ext_name, ext_designation, industry_id)
             VALUES ($1, $2, $3, $4) 
             RETURNING ext_email AS "extEmail", ext_name AS "extName";
         `;
-    const result = await client.query(query, [extEmail, extName, extDesignation, industryId]);
+    const result = await pool.query(query, [extEmail, extName, extDesignation, industryId]);
 
-    await client.query("COMMIT");
     return res
       .status(201)
       .json(new ApiResponse(201, result.rows[0], "External supervisor created successfully"));
   } catch (err: unknown) {
-    await client.query("ROLLBACK");
     const error = err as DatabaseError;
 
     if (error.code === DbErrorCodes.UNIQUE_VIOLATION) {
@@ -48,8 +44,6 @@ export async function createExternal(req: Request, res: Response, next: NextFunc
 
     console.error("External Creation Error:", error);
     return next(new ApiError(500, "Database Error", "Failed to create external supervisor"));
-  } finally {
-    client.release();
   }
 }
 
@@ -59,7 +53,6 @@ export async function updateExternal(req: Request, res: Response, next: NextFunc
   }
   const { extEmail } = req.params; // Email is the Primary Key
   const { extName, extDesignation, industryId } = req.body;
-  const client = await pool.connect();
 
   try {
     const query = `
@@ -68,7 +61,7 @@ export async function updateExternal(req: Request, res: Response, next: NextFunc
                 industry_id = COALESCE($3, industry_id)
             WHERE ext_email = $4 RETURNING *;
         `;
-    const result = await client.query(query, [extName, extDesignation, industryId, extEmail]);
+    const result = await pool.query(query, [extName, extDesignation, industryId, extEmail]);
 
     if (result.rowCount === 0) {
       return next(new ApiError(404, "Not Found", "External supervisor not found"));
@@ -80,7 +73,34 @@ export async function updateExternal(req: Request, res: Response, next: NextFunc
     if (err.code === DbErrorCodes.FOREIGN_KEY_VIOLATION)
       return next(new ApiError(409, "Conflict", "Industry ID does not exist"));
     return next(new ApiError(500, "Database Error", "Failed to update external supervisor"));
-  } finally {
-    client.release();
+  }
+}
+
+export async function getExternals(req: Request, res: Response, next: NextFunction) {
+  try {
+    let queryText = `
+      SELECT ext_email, ext_name, ext_designation, industry_id
+      FROM external_superv
+      WHERE 1=1
+    `;
+
+    const queryParams: any[] = [];
+    let paramCounter = 1;
+
+    // Filter = Industry ID
+    if (req.query.industryId) {
+      queryText += ` AND industry_id = $${paramCounter}`;
+      queryParams.push(req.query.industryId);
+      paramCounter++;
+    }
+
+    queryText += ` ORDER BY ext_name ASC;`;
+
+    const result = await pool.query(queryText, queryParams);
+
+    return res.status(200).json(new ApiResponse(200, result.rows, "External supervisors fetched successfully"));
+  } catch (error) {
+    console.error("Error fetching external supervisors:", error);
+    return next(new ApiError(500, "Internal Server Error", "Failed to fetch external supervisors"));
   }
 }

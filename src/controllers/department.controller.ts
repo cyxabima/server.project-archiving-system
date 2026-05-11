@@ -16,10 +16,8 @@ export async function addDepartment(req: Request, res: Response, next: NextFunct
     return next(new ApiError(422, "Unprocessable Entity", "All fields are required"));
   }
 
-  const client = await pool.connect();
 
   try {
-    await client.query("BEGIN");
     const deptQuery = `
             INSERT INTO department (dept_abbreviation, dept_name)
             VALUES ($1, $2) 
@@ -28,14 +26,12 @@ export async function addDepartment(req: Request, res: Response, next: NextFunct
                 dept_name AS "deptName";
         `;
 
-    const deptRes = await client.query(deptQuery, [deptAbbreviation, deptName]);
-    await client.query("COMMIT");
+    const deptRes = await pool.query(deptQuery, [deptAbbreviation, deptName]);
 
     return res
       .status(201)
       .json(new ApiResponse(201, deptRes.rows[0], "Department Added Successfully."));
   } catch (err: unknown) {
-    await client.query("ROLLBACK");
 
     const error = err as DatabaseError;
 
@@ -45,9 +41,7 @@ export async function addDepartment(req: Request, res: Response, next: NextFunct
 
     console.error("Transaction Error", error);
     return next(new ApiError(500, "DATABASE FAILED", "Failed to execute Query"));
-  } finally {
-    client.release();
-  }
+  } 
 }
 
 export async function updateDepartment(req: Request, res: Response, next: NextFunction) {
@@ -66,11 +60,8 @@ export async function updateDepartment(req: Request, res: Response, next: NextFu
     );
   }
 
-  const client = await pool.connect();
 
   try {
-    await client.query("BEGIN");
-
     const updateQuery = `
             UPDATE department 
             SET 
@@ -82,19 +73,16 @@ export async function updateDepartment(req: Request, res: Response, next: NextFu
                 dept_name AS "deptName";
         `;
 
-    const result = await client.query(updateQuery, [deptAbbreviation, deptName, oldAbbr]);
+    const result = await pool.query(updateQuery, [deptAbbreviation, deptName, oldAbbr]);
 
     if (result.rowCount === 0) {
-      await client.query("ROLLBACK");
       return next(new ApiError(404, "Not Found", "Department not found."));
     }
 
-    await client.query("COMMIT");
     return res
       .status(200)
       .json(new ApiResponse(200, result.rows[0], "Department updated successfully"));
   } catch (err: unknown) {
-    await client.query("ROLLBACK");
 
     const error = err as DatabaseError;
 
@@ -106,7 +94,34 @@ export async function updateDepartment(req: Request, res: Response, next: NextFu
 
     console.error("Transaction Error", error);
     return next(new ApiError(500, "DATABASE FAILED", "Failed to execute Query"));
-  } finally {
-    client.release();
+  }
+}
+
+export async function getDepartments(req: Request, res: Response, next: NextFunction) {
+  try {
+    let queryText = `
+      SELECT dept_abbreviation, dept_name
+      FROM department
+      WHERE 1=1
+    `;
+
+    const queryParams: any[] = [];
+    let paramCounter = 1;
+
+    // Filter = Exact Department Abbreviation
+    if (req.query.deptAbbreviation) {
+      queryText += ` AND dept_abbreviation = $${paramCounter}`;
+      queryParams.push(req.query.deptAbbreviation);
+      paramCounter++;
+    }
+
+    queryText += ` ORDER BY dept_abbreviation ASC;`;
+
+    const result = await pool.query(queryText, queryParams);
+
+    return res.status(200).json(new ApiResponse(200, result.rows, "Departments fetched successfully"));
+  } catch (error) {
+    console.error("Error fetching departments:", error);
+    return next(new ApiError(500, "Internal Server Error", "Failed to fetch departments"));
   }
 }

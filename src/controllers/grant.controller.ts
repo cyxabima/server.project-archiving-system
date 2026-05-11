@@ -19,17 +19,15 @@ export async function createGrant(req: Request, res: Response, next: NextFunctio
     return next(new ApiError(422, "Unprocessable Entity", "All grant fields are required"));
   }
 
-  const client = await pool.connect();
 
   try {
-    await client.query("BEGIN");
 
     const query = `
             INSERT INTO grants (project_id, grant_name, recieved_date, grant_amount, industry_id)
             VALUES ($1, $2, $3, $4, $5) 
             RETURNING grant_name AS "grantName", grant_amount AS "grantAmount";
         `;
-    const result = await client.query(query, [
+    const result = await pool.query(query, [
       projectId,
       grantName,
       recievedDate,
@@ -37,12 +35,10 @@ export async function createGrant(req: Request, res: Response, next: NextFunctio
       industryId
     ]);
 
-    await client.query("COMMIT");
     return res
       .status(201)
       .json(new ApiResponse(201, result.rows[0], "Grant recorded successfully"));
   } catch (err: unknown) {
-    await client.query("ROLLBACK");
     const error = err as DatabaseError;
 
     if (error.code === DbErrorCodes.UNIQUE_VIOLATION) {
@@ -56,8 +52,6 @@ export async function createGrant(req: Request, res: Response, next: NextFunctio
 
     console.error("Grant Creation Error:", error);
     return next(new ApiError(500, "Database Error", "Failed to create grant"));
-  } finally {
-    client.release();
   }
 }
 
@@ -67,7 +61,6 @@ export async function updateGrant(req: Request, res: Response, next: NextFunctio
   }
   const { projectId, grantName } = req.params;
   const { recievedDate, grantAmount, industryId } = req.body;
-  const client = await pool.connect();
 
   try {
     const query = `
@@ -76,7 +69,7 @@ export async function updateGrant(req: Request, res: Response, next: NextFunctio
                 industry_id = COALESCE($3, industry_id)
             WHERE project_id = $4 AND grant_name = $5 RETURNING *;
         `;
-    const result = await client.query(query, [
+    const result = await pool.query(query, [
       recievedDate,
       grantAmount,
       industryId,
@@ -92,7 +85,41 @@ export async function updateGrant(req: Request, res: Response, next: NextFunctio
     if (err.code === DbErrorCodes.FOREIGN_KEY_VIOLATION)
       return next(new ApiError(409, "Conflict", "Industry ID does not exist"));
     return next(new ApiError(500, "Database Error", "Failed to update grant"));
-  } finally {
-    client.release();
+  }
+}
+
+export async function getGrants(req: Request, res: Response, next: NextFunction) {
+  try {
+    let queryText = `
+      SELECT project_id, grant_name, recieved_date, grant_amount, industry_id
+      FROM grants
+      WHERE 1=1
+    `;
+
+    const queryParams: any[] = [];
+    let paramCounter = 1;
+
+    // Filter = Project ID
+    if (req.query.projectId) {
+      queryText += ` AND project_id = $${paramCounter}`;
+      queryParams.push(req.query.projectId);
+      paramCounter++;
+    }
+
+    // Filter = Industry ID
+    if (req.query.industryId) {
+      queryText += ` AND industry_id = $${paramCounter}`;
+      queryParams.push(req.query.industryId);
+      paramCounter++;
+    }
+
+    queryText += ` ORDER BY recieved_date DESC;`;
+
+    const result = await pool.query(queryText, queryParams);
+
+    return res.status(200).json(new ApiResponse(200, result.rows, "Grants fetched successfully"));
+  } catch (error) {
+    console.error("Error fetching grants:", error);
+    return next(new ApiError(500, "Internal Server Error", "Failed to fetch grants"));
   }
 }

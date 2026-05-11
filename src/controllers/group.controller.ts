@@ -165,3 +165,39 @@ export async function updateGroup(req: Request, res: Response, next: NextFunctio
     return next(new ApiError(500, "Database Error", "Failed to update group"));
   }
 }
+
+export async function getGroups(req: Request, res: Response, next: NextFunction) {
+  try {
+    let queryText = `
+      SELECT group_id, group_leader, member_2, member_3, member_4, project_id
+      FROM groups
+      WHERE 1=1
+    `;
+
+    const queryParams: any[] = [];
+    let paramCounter = 1;
+
+    // Filter = Project ID
+    if (req.query.projectId) {
+      queryText += ` AND project_id = $${paramCounter}`;
+      queryParams.push(req.query.projectId);
+      paramCounter++;
+    }
+
+    // Filter = Student SeatNo. (in any member slot)
+    if (req.query.seatNo) {
+      queryText += ` AND (group_leader = $${paramCounter} OR member_2 = $${paramCounter} OR member_3 = $${paramCounter} OR member_4 = $${paramCounter})`;
+      queryParams.push(req.query.seatNo);
+      paramCounter++;
+    }
+
+    queryText += ` ORDER BY group_id ASC;`;
+
+    const result = await pool.query(queryText, queryParams);
+
+    return res.status(200).json(new ApiResponse(200, result.rows, "Groups fetched successfully"));
+  } catch (error) {
+    console.error("Error fetching groups:", error);
+    return next(new ApiError(500, "Internal Server Error", "Failed to fetch groups"));
+  }
+}

@@ -214,3 +214,46 @@ export async function addStaff(req: Request, res: Response, next: NextFunction) 
     client.release();
   }
 }
+
+export async function getUsers(req: Request, res: Response, next: NextFunction) {
+  try {
+    let queryText = `
+      SELECT user_id, user_name, user_email, user_contact_no, dept_abbreviation, role, is_active
+      FROM users
+      WHERE 1=1
+    `;
+
+    const queryParams: any[] = [];
+    let paramCounter = 1;
+
+    // Filter = Department Abbreviation
+    if (req.query.deptAbbreviation) {
+      queryText += ` AND dept_abbreviation = $${paramCounter}`;
+      queryParams.push(req.query.deptAbbreviation);
+      paramCounter++;
+    }
+
+    // Filter = Role
+    if (req.query.role) {
+      queryText += ` AND role = $${paramCounter}`;
+      queryParams.push(req.query.role);
+      paramCounter++;
+    }
+
+    // Filter = Active Status
+    if (req.query.isActive !== undefined) {
+      queryText += ` AND is_active = $${paramCounter}`;
+      queryParams.push(req.query.isActive === 'true');
+      paramCounter++;
+    }
+
+    queryText += ` ORDER BY user_name ASC;`;
+
+    const result = await pool.query(queryText, queryParams);
+
+    return res.status(200).json(new ApiResponse(200, result.rows, "Users fetched successfully"));
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    return next(new ApiError(500, "Internal Server Error", "Failed to fetch users"));
+  }
+}
