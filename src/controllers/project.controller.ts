@@ -145,13 +145,10 @@ export async function listProjects(req: Request, res: Response, next: NextFuncti
 export async function searchProject(req: Request, res: Response, next: NextFunction) {
   let searchTerm = null;
 
-  // Grab the search query and wrap it in % for partial matching
   if (req.query.search && typeof req.query.search === "string") {
     searchTerm = `%${req.query.search}%`;
   }
   try {
-    // We use a CTE with DISTINCT to guarantee projects never repeat,
-    // even if the search term matches multiple fields in the same project!
     const query = `
             WITH FilteredProjects AS (
                 SELECT DISTINCT p.project_id
