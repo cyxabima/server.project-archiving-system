@@ -3,49 +3,142 @@ import pool from "../db/index.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 
-// GET /api/v1/projects
+// GET /api/v1/projects/getProjects
 export async function getProjects(req: Request, res: Response, next: NextFunction) {
   try {
-    let queryText = `
-            SELECT DISTINCT p.project_id, p.project_title, p.academic_year, p.domain_id, d.dept_abbreviation
-            FROM projects p
-            JOIN domains d ON p.domain_id = d.domain_id
-            LEFT JOIN project_industry pi ON p.project_id = pi.project_id
-            WHERE 1=1 
-        `;
-
+    let conditionQuery = `WHERE 1=1`;
     const queryParams: any[] = [];
     let paramCounter = 1;
 
-    // Filter = Domain ID
+    // Filter: Domain ID
     if (req.query.domainId) {
-      queryText += ` AND p.domain_id = $${paramCounter}`;
+      conditionQuery += ` AND p.domain_id = $${paramCounter}`;
       queryParams.push(req.query.domainId);
       paramCounter++;
     }
 
-    // Filter = Department Abbreviation
+    // Filter: Department Abbreviation
     if (req.query.deptAbbreviation) {
-      queryText += ` AND d.dept_abbreviation = $${paramCounter}`;
+      conditionQuery += ` AND d.dept_abbreviation = $${paramCounter}`;
       queryParams.push(req.query.deptAbbreviation);
       paramCounter++;
     }
 
-    // Filter = Industry ID
+    // Filter: Industry ID
     if (req.query.industryId) {
-      queryText += ` AND pi.industry_id = $${paramCounter}`;
+      conditionQuery += ` AND pi.industry_id = $${paramCounter}`;
       queryParams.push(req.query.industryId);
       paramCounter++;
     }
 
-    // Filter = Academic Year
+    // Filter: Academic Year
     if (req.query.academicYear) {
-      queryText += ` AND p.academic_year = $${paramCounter}`;
+      conditionQuery += ` AND p.academic_year = $${paramCounter}`;
       queryParams.push(req.query.academicYear);
       paramCounter++;
     }
 
-    queryText += ` ORDER BY p.academic_year DESC, p.project_title ASC;`;
+    // Filter: Industry-Linked & Grants
+    if (req.query.industries && typeof req.query.industries === "string") {
+      const industriesArray = req.query.industries.split(",");
+
+      if (industriesArray.includes("Industry-Linked")) {
+        conditionQuery += ` AND EXISTS (
+          SELECT 1 FROM project_industry pi_check WHERE pi_check.project_id = p.project_id
+        )`;
+      }
+
+      if (industriesArray.includes("Received Grant")) {
+        conditionQuery += ` AND EXISTS (
+          SELECT 1 FROM grants g WHERE g.project_id = p.project_id
+        )`;
+      }
+    }
+
+    // Filter: Global Search
+    if (req.query.search && typeof req.query.search === "string") {
+      conditionQuery += ` AND (
+        p.project_title ILIKE $${paramCounter} OR 
+        p.abstract ILIKE $${paramCounter} OR
+        p.academic_year ILIKE $${paramCounter} OR 
+        d.dept_name ILIKE $${paramCounter} OR
+        d_main.domain_name ILIKE $${paramCounter} OR
+        -- Search in Secondary Domains
+        EXISTS (
+            SELECT 1 FROM project_domains pd_search 
+            JOIN domains dom_search ON pd_search.domain_id = dom_search.domain_id 
+            WHERE pd_search.project_id = p.project_id AND dom_search.domain_name ILIKE $${paramCounter}
+        ) OR
+        -- Search in Supervisors
+        EXISTS (
+            SELECT 1 FROM project_faculty pf_search 
+            JOIN users u_search ON pf_search.faculty_id = u_search.user_id 
+            WHERE pf_search.project_id = p.project_id AND u_search.user_name ILIKE $${paramCounter}
+        ) OR
+        -- Search in Industries
+        EXISTS (
+            SELECT 1 FROM project_industry pi_search 
+            JOIN industry i_search ON pi_search.industry_id = i_search.industry_id 
+            WHERE pi_search.project_id = p.project_id AND i_search.industry_name ILIKE $${paramCounter}
+        )
+      )`;
+      queryParams.push(`%${req.query.search}%`);
+      paramCounter++;
+    }
+
+    const queryText = `
+        WITH FilteredProjects AS (
+            SELECT DISTINCT p.project_id
+            FROM projects p
+            JOIN domains d_main ON p.domain_id = d_main.domain_id
+            JOIN department d ON d_main.dept_abbreviation = d.dept_abbreviation
+            LEFT JOIN project_industry pi ON p.project_id = pi.project_id
+            ${conditionQuery}
+        )
+        SELECT 
+            p.project_id AS "id",
+            p.project_title AS "title",
+            p.abstract AS "abstract",
+            d.dept_name AS "department",
+            p.academic_year AS "batch",
+            
+            (
+                SELECT COALESCE(json_agg(dom.domain_name), '[]'::json)
+                FROM (
+                    SELECT domain_id FROM projects WHERE project_id = p.project_id
+                    UNION
+                    SELECT domain_id FROM project_domains WHERE project_id = p.project_id
+                ) all_doms
+                JOIN domains dom ON all_doms.domain_id = dom.domain_id
+            ) AS "domains",
+
+            (
+                SELECT COALESCE(json_agg(json_build_object('role', pf.supervisory_role, 'name', u.user_name)), '[]'::json)
+                FROM project_faculty pf
+                JOIN users u ON pf.faculty_id = u.user_id
+                WHERE pf.project_id = p.project_id
+            ) AS "supervisors",
+
+            (
+                SELECT COALESCE(json_agg(json_build_object('name', i.industry_name, 'association', pi_agg.association_type)), '[]'::json)
+                FROM project_industry pi_agg
+                JOIN industry i ON pi_agg.industry_id = i.industry_id
+                WHERE pi_agg.project_id = p.project_id
+            ) AS "industries",
+
+            (
+                SELECT COALESCE(json_agg(json_build_object('name', g.grant_name, 'amount', g.grant_amount)), '[]'::json)
+                FROM grants g
+                WHERE g.project_id = p.project_id
+            ) AS "grants"
+
+        FROM projects p
+        JOIN domains d_main ON p.domain_id = d_main.domain_id
+        JOIN department d ON d_main.dept_abbreviation = d.dept_abbreviation
+        -- INNER JOIN guarantees we only fetch the fully formatted JSON for the filtered rows!
+        JOIN FilteredProjects fp ON p.project_id = fp.project_id
+        ORDER BY p.academic_year DESC, p.project_title ASC;
+    `;
 
     const result = await pool.query(queryText, queryParams);
 
@@ -139,100 +232,5 @@ export async function listProjects(req: Request, res: Response, next: NextFuncti
   } catch (err: unknown) {
     console.error("Project Retrieval Error:", err);
     return next(new ApiError(500, "Database Error", "Failed to retrieve projects"));
-  }
-}
-
-export async function searchProject(req: Request, res: Response, next: NextFunction) {
-  let searchTerm = null;
-
-  if (req.query.search && typeof req.query.search === "string") {
-    searchTerm = `%${req.query.search}%`;
-  }
-  try {
-    const query = `
-            WITH FilteredProjects AS (
-                SELECT DISTINCT p.project_id
-                FROM projects p
-                JOIN domains d_main ON p.domain_id = d_main.domain_id
-                JOIN department d ON d_main.dept_abbreviation = d.dept_abbreviation
-                WHERE ($1::text IS NULL OR 
-                    p.project_title ILIKE $1 OR 
-                    p.abstract ILIKE $1 OR
-                    p.academic_year ILIKE $1 OR 
-                    d.dept_name ILIKE $1 OR
-                    d_main.domain_name ILIKE $1 OR
-                    -- Search in Secondary Domains
-                    EXISTS (
-                        SELECT 1 FROM project_domains pd 
-                        JOIN domains dom ON pd.domain_id = dom.domain_id 
-                        WHERE pd.project_id = p.project_id AND dom.domain_name ILIKE $1
-                    ) OR
-                    -- Search in Supervisors
-                    EXISTS (
-                        SELECT 1 FROM project_faculty pf 
-                        JOIN users u ON pf.faculty_id = u.user_id 
-                        WHERE pf.project_id = p.project_id AND u.user_name ILIKE $1
-                    ) OR
-                    -- Search in Industries
-                    EXISTS (
-                        SELECT 1 FROM project_industry pi 
-                        JOIN industry i ON pi.industry_id = i.industry_id 
-                        WHERE pi.project_id = p.project_id AND i.industry_name ILIKE $1
-                    )
-                )
-            )
-            SELECT 
-                p.project_id AS "id",
-                p.project_title AS "title",
-                p.abstract AS "abstract",
-                d.dept_name AS "department",
-                p.academic_year AS "batch",
-                
-                (
-                    SELECT COALESCE(json_agg(dom.domain_name), '[]'::json)
-                    FROM (
-                        SELECT domain_id FROM projects WHERE project_id = p.project_id
-                        UNION
-                        SELECT domain_id FROM project_domains WHERE project_id = p.project_id
-                    ) all_doms
-                    JOIN domains dom ON all_doms.domain_id = dom.domain_id
-                ) AS "domains",
-
-                (
-                    SELECT COALESCE(json_agg(json_build_object('role', pf.supervisory_role, 'name', u.user_name)), '[]'::json)
-                    FROM project_faculty pf
-                    JOIN users u ON pf.faculty_id = u.user_id
-                    WHERE pf.project_id = p.project_id
-                ) AS "supervisors",
-
-                (
-                    SELECT COALESCE(json_agg(json_build_object('name', i.industry_name, 'association', pi.association_type)), '[]'::json)
-                    FROM project_industry pi
-                    JOIN industry i ON pi.industry_id = i.industry_id
-                    WHERE pi.project_id = p.project_id
-                ) AS "industries",
-
-                (
-                    SELECT COALESCE(json_agg(json_build_object('name', g.grant_name, 'amount', g.grant_amount)), '[]'::json)
-                    FROM grants g
-                    WHERE g.project_id = p.project_id
-                ) AS "grants"
-
-            FROM projects p
-            JOIN domains d_main ON p.domain_id = d_main.domain_id
-            JOIN department d ON d_main.dept_abbreviation = d.dept_abbreviation
-            -- This JOIN ensures we only build the JSON for the projects that matched!
-            JOIN FilteredProjects fp ON p.project_id = fp.project_id
-            ORDER BY p.project_id DESC;
-        `;
-
-    const result = await pool.query(query, [searchTerm]);
-
-    return res.status(200).json({
-      data: result.rows
-    });
-  } catch (err: unknown) {
-    console.error("Global Search Error:", err);
-    return next(new ApiError(500, "Database Error", "Failed to search projects"));
   }
 }
