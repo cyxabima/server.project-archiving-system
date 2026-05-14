@@ -77,16 +77,22 @@ export async function getAuditLogs(req: Request, res: Response, next: NextFuncti
     const totalPages = Math.ceil(totalRecords / limit);
     const currentPage = Math.floor(offset / limit) + 1;
 
-    return res.status(200).json({
+    const responsePayload = {
       data: dataResult.rows,
       meta: {
         currentPage,
         totalPages,
         totalRecords
       }
-    });
-  } catch (error) {
+    };
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, responsePayload, "Audit logs retrieved successfully"));
+  } catch (err: unknown) {
+    const error = err as DatabaseError;
     console.error("Audit Logs Retrieval Error:", error);
+
     return next(new ApiError(500, "Database Error", "Failed to retrieve audit logs"));
   }
 }
