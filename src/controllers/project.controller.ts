@@ -39,7 +39,7 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
     }
 
     // Filter: Industry-Linked & Grants
-    if (req.query.industries && typeof req.query.industries === 'string') {
+    if (req.query.industries && typeof req.query.industries === "string") {
       const industriesArray = req.query.industries.split(",");
 
       if (industriesArray.includes("Industry-Linked")) {
@@ -56,7 +56,7 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
     }
 
     // Filter: Global Search
-    if (req.query.search && typeof req.query.search === 'string') {
+    if (req.query.search && typeof req.query.search === "string") {
       conditionQuery += ` AND (
         p.project_title ILIKE $${paramCounter} OR 
         p.abstract ILIKE $${paramCounter} OR
