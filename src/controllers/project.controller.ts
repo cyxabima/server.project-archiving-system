@@ -5,6 +5,16 @@ import ApiResponse from "../utils/ApiResponse.js";
 
 // GET /api/v1/projects/getProjects
 export async function getProjects(req: Request, res: Response, next: NextFunction) {
+  let limit = 10;
+  let offset = 0;
+
+  if (req.query.limit && req.query.offset) {
+    limit = parseInt(req.query.limit as string, 10);
+    offset = parseInt(req.query.offset as string, 10);
+    if (isNaN(limit)) limit = 10;
+    if (isNaN(offset)) offset = 0;
+  }
+
   try {
     let conditionQuery = `WHERE 1=1`;
     const queryParams: any[] = [];
@@ -38,7 +48,32 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
       paramCounter++;
     }
 
-    // Filter: Industry-Linked & Grants
+    // Filter: Domain Name (Case-Insensitive)
+    if (req.query.domainName && typeof req.query.domainName === "string") {
+      conditionQuery += ` AND (
+        d_main.domain_name ILIKE $${paramCounter} OR 
+        EXISTS (
+            SELECT 1 FROM project_domains pd_name 
+            JOIN domains dom_name ON pd_name.domain_id = dom_name.domain_id 
+            WHERE pd_name.project_id = p.project_id AND dom_name.domain_name ILIKE $${paramCounter}
+        )
+      )`;
+      queryParams.push(`%${req.query.domainName}%`);
+      paramCounter++;
+    }
+
+    // Filter: Industry Name (Case-Insensitive)
+    if (req.query.industryName && typeof req.query.industryName === "string") {
+      conditionQuery += ` AND EXISTS (
+        SELECT 1 FROM project_industry pi_name 
+        JOIN industry i_name ON pi_name.industry_id = i_name.industry_id 
+        WHERE pi_name.project_id = p.project_id AND i_name.industry_name ILIKE $${paramCounter}
+      )`;
+      queryParams.push(`%${req.query.industryName}%`);
+      paramCounter++;
+    }
+
+    // Filter: Industry-Linked & Grants (sponsored)
     if (req.query.industries && typeof req.query.industries === "string") {
       const industriesArray = req.query.industries.split(",");
 
@@ -55,32 +90,6 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
       }
     }
 
-    // Filter: Domain Name
-    if (req.query.domainName && typeof req.query.domainName === "string") {
-      // Checks both the Primary Domain (d_main) AND any Secondary Domains
-      conditionQuery += ` AND (
-            d_main.domain_name ILIKE $${paramCounter} OR 
-            EXISTS (
-                SELECT 1 FROM project_domains pd_name 
-                JOIN domains dom_name ON pd_name.domain_id = dom_name.domain_id 
-                WHERE pd_name.project_id = p.project_id AND dom_name.domain_name ILIKE $${paramCounter}
-            )
-          )`;
-      queryParams.push(`%${req.query.domainName}%`);
-      paramCounter++;
-    }
-
-    // Filter: Industry Name
-    if (req.query.industryName && typeof req.query.industryName === "string") {
-      conditionQuery += ` AND EXISTS (
-        SELECT 1 FROM project_industry pi_name 
-        JOIN industry i_name ON pi_name.industry_id = i_name.industry_id 
-        WHERE pi_name.project_id = p.project_id AND i_name.industry_name ILIKE $${paramCounter}
-      )`;
-      queryParams.push(`%${req.query.industryName}%`);
-      paramCounter++;
-    }
-
     // Filter: Global Search
     if (req.query.search && typeof req.query.search === "string") {
       conditionQuery += ` AND (
@@ -89,19 +98,16 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
         p.academic_year ILIKE $${paramCounter} OR 
         d.dept_name ILIKE $${paramCounter} OR
         d_main.domain_name ILIKE $${paramCounter} OR
-        -- Search in Secondary Domains
         EXISTS (
             SELECT 1 FROM project_domains pd_search 
             JOIN domains dom_search ON pd_search.domain_id = dom_search.domain_id 
             WHERE pd_search.project_id = p.project_id AND dom_search.domain_name ILIKE $${paramCounter}
         ) OR
-        -- Search in Supervisors
         EXISTS (
             SELECT 1 FROM project_faculty pf_search 
             JOIN users u_search ON pf_search.faculty_id = u_search.user_id 
             WHERE pf_search.project_id = p.project_id AND u_search.user_name ILIKE $${paramCounter}
         ) OR
-        -- Search in Industries
         EXISTS (
             SELECT 1 FROM project_industry pi_search 
             JOIN industry i_search ON pi_search.industry_id = i_search.industry_id 
@@ -112,7 +118,7 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
       paramCounter++;
     }
 
-    const queryText = `
+    const cteQuery = `
         WITH FilteredProjects AS (
             SELECT DISTINCT p.project_id
             FROM projects p
@@ -121,6 +127,10 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
             LEFT JOIN project_industry pi ON p.project_id = pi.project_id
             ${conditionQuery}
         )
+    `;
+
+    const dataQuery = `
+        ${cteQuery}
         SELECT 
             p.project_id AS "id",
             p.project_title AS "title",
@@ -161,14 +171,40 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
         FROM projects p
         JOIN domains d_main ON p.domain_id = d_main.domain_id
         JOIN department d ON d_main.dept_abbreviation = d.dept_abbreviation
-        -- INNER JOIN guarantees we only fetch the fully formatted JSON for the filtered rows!
         JOIN FilteredProjects fp ON p.project_id = fp.project_id
-        ORDER BY p.academic_year DESC, p.project_title ASC;
+        ORDER BY p.academic_year DESC, p.project_title ASC
+        LIMIT $${paramCounter} OFFSET $${paramCounter + 1};
     `;
 
-    const result = await pool.query(queryText, queryParams);
+    const countQuery = `
+        ${cteQuery}
+        SELECT COUNT(*) FROM FilteredProjects;
+    `;
 
-    return res.status(200).json(new ApiResponse(200, result.rows, "Projects fetched successfully"));
+    const dataParams = [...queryParams, limit, offset];
+
+    const [dataResult, countResult] = await Promise.all([
+      pool.query(dataQuery, dataParams),
+      pool.query(countQuery, queryParams)
+    ]);
+
+    const totalRecords = parseInt(countResult.rows[0].count, 10);
+    const totalPages = Math.ceil(totalRecords / limit);
+    const currentPage = Math.floor(offset / limit) + 1;
+
+    // Build Final Payload
+    const responsePayload = {
+      data: dataResult.rows,
+      meta: {
+        currentPage,
+        totalPages,
+        totalRecords
+      }
+    };
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, responsePayload, "Projects fetched successfully"));
   } catch (error) {
     console.error("Error fetching projects:", error);
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch projects"));
