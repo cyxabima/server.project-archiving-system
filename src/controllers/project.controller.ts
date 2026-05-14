@@ -55,6 +55,32 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
       }
     }
 
+    // Filter: Domain Name
+    if (req.query.domainName && typeof req.query.domainName === "string") {
+      // Checks both the Primary Domain (d_main) AND any Secondary Domains
+      conditionQuery += ` AND (
+            d_main.domain_name ILIKE $${paramCounter} OR 
+            EXISTS (
+                SELECT 1 FROM project_domains pd_name 
+                JOIN domains dom_name ON pd_name.domain_id = dom_name.domain_id 
+                WHERE pd_name.project_id = p.project_id AND dom_name.domain_name ILIKE $${paramCounter}
+            )
+          )`;
+      queryParams.push(`%${req.query.domainName}%`);
+      paramCounter++;
+    }
+
+    // Filter: Industry Name
+    if (req.query.industryName && typeof req.query.industryName === "string") {
+      conditionQuery += ` AND EXISTS (
+        SELECT 1 FROM project_industry pi_name 
+        JOIN industry i_name ON pi_name.industry_id = i_name.industry_id 
+        WHERE pi_name.project_id = p.project_id AND i_name.industry_name ILIKE $${paramCounter}
+      )`;
+      queryParams.push(`%${req.query.industryName}%`);
+      paramCounter++;
+    }
+
     // Filter: Global Search
     if (req.query.search && typeof req.query.search === "string") {
       conditionQuery += ` AND (
