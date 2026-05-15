@@ -67,7 +67,7 @@ CREATE OR REPLACE FUNCTION generate_industry_id() RETURNS TRIGGER AS $$
 DECLARE next_num INT;
 BEGIN
     SELECT COALESCE(MAX(CAST(SPLIT_PART(industry_id, '-', 3) AS INT)), 0) + 1
-    INTO next_num FROM industry WHERE industry_id LIKE 'IND-GLB-%';
+    INTO next_num FROM industry WHERE industry_id LIKE 'IND-%';
 
     NEW.industry_id := 'IND-' || LPAD(next_num::TEXT, GREATEST(3, LENGTH(next_num::TEXT)), '0');
     RETURN NEW;

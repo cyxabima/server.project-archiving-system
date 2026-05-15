@@ -37,23 +37,19 @@ DECLARE
     batch_digits VARCHAR(2);
     prefix VARCHAR;
 BEGIN
-    -- Extract the first two numbers from the leader's seat number (e.g., 'CS-24138' -> '24')
     batch_digits := SUBSTRING(NEW.group_leader FROM '[0-9]{2}');
     
-    -- Fallback safety check just in case the seat number format is weird
     IF batch_digits IS NULL THEN
         batch_digits := 'XX';
     END IF;
 
     prefix := 'G-B' || batch_digits || '-';
 
-    -- Find the highest existing sequence for this specific batch and add 1
     SELECT COALESCE(MAX(CAST(SPLIT_PART(group_id, '-', 3) AS INT)), 0) + 1
     INTO next_num 
     FROM groups 
     WHERE group_id LIKE prefix || '%';
 
-    -- Construct the final ID using dynamic padding
     NEW.group_id := prefix || LPAD(next_num::TEXT, GREATEST(3, LENGTH(next_num::TEXT)), '0');
     RETURN NEW;
 END;
