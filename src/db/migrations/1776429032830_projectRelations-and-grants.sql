@@ -10,9 +10,9 @@ CREATE TABLE resources (
 );
 
 CREATE TABLE grants (
-    project_id VARCHAR(20) NOT NULL,
+    project_id VARCHAR(20),
     grant_name VARCHAR(150) NOT NULL,
-    recieved_date DATE NOT NULL,
+    recieved_date DATE,
     grant_amount DECIMAL(12, 2) NOT NULL,
     industry_id VARCHAR(20) NOT NULL, 
     PRIMARY KEY (project_id, grant_name),

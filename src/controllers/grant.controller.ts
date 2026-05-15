@@ -9,10 +9,10 @@ export async function createGrant(req: Request, res: Response, next: NextFunctio
     return next(new ApiError(422, "Unprocessable Entity", "Body is missing"));
   }
 
-  const { projectId, grantName, recievedDate, grantAmount, industryId } = req.body;
+  const { projectId, grantName, recievedDate, grantAmount, industryName } = req.body;
 
   if (
-    [projectId, grantName, recievedDate, grantAmount, industryId].some(
+    [projectId, grantName, recievedDate, grantAmount, industryName].some(
       (field) => field === undefined
     )
   ) {
@@ -20,12 +20,22 @@ export async function createGrant(req: Request, res: Response, next: NextFunctio
   }
 
   try {
-    const query = `
+    const industryQuery = `SELECT industry_id FROM industry WHERE industry_name = $1`;
+    const industryResult = await pool.query(industryQuery, [industryName]);
+
+    if (industryResult.rows.length === 0) {
+      return next(new ApiError(404, "Not Found", `Industry '${industryName}' does not exist in the system.`));
+    }
+
+    const industryId = industryResult.rows[0].industry_id;
+
+    const insertQuery = `
             INSERT INTO grants (project_id, grant_name, recieved_date, grant_amount, industry_id)
             VALUES ($1, $2, $3, $4, $5) 
-            RETURNING grant_name AS "grantName", grant_amount AS "grantAmount";
+            RETURNING grant_name AS "grantName", grant_amount AS "grantAmount", industry_id AS "industryId";
         `;
-    const result = await pool.query(query, [
+        
+    const result = await pool.query(insertQuery, [
       projectId,
       grantName,
       recievedDate,
@@ -33,9 +43,12 @@ export async function createGrant(req: Request, res: Response, next: NextFunctio
       industryId
     ]);
 
+    result.rows[0].IndustryName = industryName
+
     return res
       .status(201)
       .json(new ApiResponse(201, result.rows[0], "Grant recorded successfully"));
+
   } catch (err: unknown) {
     const error = err as DatabaseError;
 
@@ -43,9 +56,7 @@ export async function createGrant(req: Request, res: Response, next: NextFunctio
       return next(new ApiError(409, "Conflict", "This grant name already exists for this project"));
     }
     if (error.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) {
-      return next(
-        new ApiError(409, "Conflict", "The specified Project ID or Industry ID does not exist")
-      );
+      return next(new ApiError(409, "Conflict", "The specified Project ID does not exist"));
     }
 
     console.error("Grant Creation Error:", error);
