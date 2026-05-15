@@ -20,10 +20,15 @@ export async function createStudent(req: Request, res: Response, next: NextFunct
 
   try {
     const query = `
-            INSERT INTO students (seat_no, std_name, std_email, batch, project_id)
-            VALUES ($1, $2, $3, $4, $5) 
-            RETURNING seat_no AS "seatNo", std_name AS "stdName", std_email AS "stdEmail";
-        `;
+    INSERT INTO students (seat_no, std_name, std_email, batch, project_id)
+    VALUES ($1, $2, $3, $4, $5) 
+    RETURNING 
+        seat_no AS "seatNo", 
+        std_name AS "stdName", 
+        std_email AS "stdEmail",
+        batch AS "batch",
+        project_id AS "projectId";
+    `;
     const result = await pool.query(query, [seatNo, stdName, stdEmail, batch]);
 
     return res.status(201).json(new ApiResponse(201, result.rows[0], "Student added successfully"));

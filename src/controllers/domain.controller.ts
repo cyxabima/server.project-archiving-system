@@ -25,7 +25,7 @@ export async function createDomain(req: Request, res: Response, next: NextFuncti
     const query = `
             INSERT INTO domains (domain_name, domain_description, dept_abbreviation)
             VALUES ($1, $2, $3) 
-            RETURNING domain_id AS "domainId", domain_name AS "domainName";
+            RETURNING domain_id AS "domainId", domain_name AS "domainName", domain_description AS domainDescription, dept_abbreviation AS deptAbbreviation ;
         `;
     const result = await pool.query(query, [domainName, domainDescription, deptAbbreviation]);
 

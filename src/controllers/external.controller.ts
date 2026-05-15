@@ -21,7 +21,7 @@ export async function createExternal(req: Request, res: Response, next: NextFunc
     const query = `
             INSERT INTO external_superv (ext_email, ext_name, ext_designation, industry_id)
             VALUES ($1, $2, $3, $4) 
-            RETURNING ext_email AS "extEmail", ext_name AS "extName";
+            RETURNING ext_email AS "extEmail", ext_name AS "extName", ext_designation AS extDesignation, industry_id AS industryId ;
         `;
     const result = await pool.query(query, [extEmail, extName, extDesignation, industryId]);
 

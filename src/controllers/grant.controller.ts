@@ -11,11 +11,7 @@ export async function createGrant(req: Request, res: Response, next: NextFunctio
 
   const { projectId, grantName, recievedDate, grantAmount, industryName } = req.body;
 
-  if (
-    [projectId, grantName, recievedDate, grantAmount, industryName].some(
-      (field) => field === undefined
-    )
-  ) {
+  if ([grantName, grantAmount, industryName].some((field) => field === undefined)) {
     return next(new ApiError(422, "Unprocessable Entity", "All grant fields are required"));
   }
 
@@ -24,7 +20,9 @@ export async function createGrant(req: Request, res: Response, next: NextFunctio
     const industryResult = await pool.query(industryQuery, [industryName]);
 
     if (industryResult.rows.length === 0) {
-      return next(new ApiError(404, "Not Found", `Industry '${industryName}' does not exist in the system.`));
+      return next(
+        new ApiError(404, "Not Found", `Industry '${industryName}' does not exist in the system.`)
+      );
     }
 
     const industryId = industryResult.rows[0].industry_id;
@@ -34,7 +32,7 @@ export async function createGrant(req: Request, res: Response, next: NextFunctio
             VALUES ($1, $2, $3, $4, $5) 
             RETURNING grant_name AS "grantName", grant_amount AS "grantAmount", industry_id AS "industryId";
         `;
-        
+
     const result = await pool.query(insertQuery, [
       projectId,
       grantName,
@@ -43,12 +41,11 @@ export async function createGrant(req: Request, res: Response, next: NextFunctio
       industryId
     ]);
 
-    result.rows[0].IndustryName = industryName
+    result.rows[0].IndustryName = industryName;
 
     return res
       .status(201)
       .json(new ApiResponse(201, result.rows[0], "Grant recorded successfully"));
-
   } catch (err: unknown) {
     const error = err as DatabaseError;
 
