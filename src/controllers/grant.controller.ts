@@ -89,8 +89,13 @@ export async function updateGrant(req: Request, res: Response, next: NextFunctio
 export async function getGrants(req: Request, res: Response, next: NextFunction) {
   try {
     let queryText = `
-      SELECT project_id, grant_name, recieved_date, grant_amount, industry_id
-      FROM grants
+    SELECT 
+    g.grant_name, 
+    g.grant_amount, 
+    g.project_id,
+    i.industry_name 
+    FROM grants g
+    LEFT JOIN industry i ON g.industry_id = i.industry_id
       WHERE 1=1
     `;
 
