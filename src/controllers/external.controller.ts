@@ -9,21 +9,33 @@ export async function createExternal(req: Request, res: Response, next: NextFunc
     return next(new ApiError(422, "Unprocessable Entity", "Body is missing"));
   }
 
-  const { extEmail, extName, extDesignation, industryId } = req.body;
+  const { extEmail, extName, extDesignation, industryName } = req.body;
 
-  if ([extEmail, extName, industryId].some((field) => !field)) {
+  if ([extEmail, extName, industryName].some((field) => !field)) {
     return next(
-      new ApiError(422, "Unprocessable Entity", "Email, Name, and Industry ID are required")
+      new ApiError(422, "Unprocessable Entity", "Email, Name, and Industry Name are required")
     );
   }
 
   try {
+    const industryQuery = `SELECT industry_id FROM industry WHERE industry_name = $1`;
+    const industryResult = await pool.query(industryQuery, [industryName]);
+
+    if (industryResult.rows.length === 0) {
+      return next(
+        new ApiError(404, "Not Found", `Industry '${industryName}' does not exist in the system.`)
+      );
+    }
+    const industryId = industryResult.rows[0].industry_id;
+
     const query = `
             INSERT INTO external_superv (ext_email, ext_name, ext_designation, industry_id)
             VALUES ($1, $2, $3, $4) 
-            RETURNING ext_email AS "extEmail", ext_name AS "extName", ext_designation AS extDesignation, industry_id AS industryId ;
+            RETURNING ext_email AS "extEmail", ext_name AS "extName", ext_designation AS "extDesignation", industry_id AS "industryId";
         `;
     const result = await pool.query(query, [extEmail, extName, extDesignation, industryId]);
+
+    result.rows[0].industryName = industryName;
 
     return res
       .status(201)
@@ -49,21 +61,42 @@ export async function updateExternal(req: Request, res: Response, next: NextFunc
   if (!req.body || Object.keys(req.body).length === 0) {
     return next(new ApiError(422, "Unprocessable Entity", "Body is missing"));
   }
-  const { extEmail } = req.params; // Email is the Primary Key
-  const { extName, extDesignation, industryId } = req.body;
+  const { extEmail } = req.params;
+  const { extName, extDesignation, industryName } = req.body;
 
   try {
+    let industryId = undefined;
+
+    if (industryName) {
+      const industryQuery = `SELECT industry_id FROM industry WHERE industry_name = $1`;
+      const industryResult = await pool.query(industryQuery, [industryName]);
+
+      if (industryResult.rows.length === 0) {
+        return next(
+          new ApiError(404, "Not Found", `Industry '${industryName}' does not exist in the system.`)
+        );
+      }
+      industryId = industryResult.rows[0].industry_id;
+    }
+
     const query = `
             UPDATE external_superv 
-            SET ext_name = COALESCE($1, ext_name), ext_designation = COALESCE($2, ext_designation), 
+            SET ext_name = COALESCE($1, ext_name), 
+                ext_designation = COALESCE($2, ext_designation), 
                 industry_id = COALESCE($3, industry_id)
-            WHERE ext_email = $4 RETURNING *;
+            WHERE ext_email = $4 
+            RETURNING ext_email AS "extEmail", ext_name AS "extName", ext_designation AS "extDesignation", industry_id AS "industryId";
         `;
     const result = await pool.query(query, [extName, extDesignation, industryId, extEmail]);
 
     if (result.rowCount === 0) {
       return next(new ApiError(404, "Not Found", "External supervisor not found"));
     }
+
+    if (industryName) {
+      result.rows[0].industryName = industryName;
+    }
+
     return res
       .status(200)
       .json(new ApiResponse(200, result.rows[0], "External updated successfully"));
