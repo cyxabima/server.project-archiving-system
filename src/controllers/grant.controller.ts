@@ -82,9 +82,23 @@ export async function updateGrant(req: Request, res: Response, next: NextFunctio
   }
 
   const { projectId, grantName } = req.params;
-  const { recievedDate, grantAmount, industryId } = req.body;
+  const { recievedDate, grantAmount, industryName } = req.body;
 
   try {
+    let industryId = undefined;
+
+    if (industryName) {
+      const industryQuery = `SELECT industry_id FROM industry WHERE industry_name = $1`;
+      const industryResult = await pool.query(industryQuery, [industryName]);
+
+      if (industryResult.rows.length === 0) {
+        return next(
+          new ApiError(404, "Not Found", `Industry '${industryName}' does not exist in the system.`)
+        );
+      }
+      industryId = industryResult.rows[0].industry_id;
+    }
+
     const query = `
       UPDATE grants 
       SET 
@@ -110,6 +124,10 @@ export async function updateGrant(req: Request, res: Response, next: NextFunctio
 
     if (result.rowCount === 0) {
       return next(new ApiError(404, "Not Found", "Grant not found for this project"));
+    }
+
+    if (industryName) {
+      result.rows[0].industryName = industryName;
     }
 
     return res.status(200).json(new ApiResponse(200, result.rows[0], "Grant updated successfully"));
