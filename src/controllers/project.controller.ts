@@ -85,7 +85,7 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
 
       if (industriesArray.includes("Received Grant")) {
         conditionQuery += ` AND EXISTS (
-          SELECT 1 FROM grants g WHERE g.project_id = p.project_id
+          SELECT 1 FROM project_grants pg WHERE pg.project_id = p.project_id
         )`;
       }
     }

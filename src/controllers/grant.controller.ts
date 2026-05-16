@@ -9,7 +9,7 @@ export async function createGrant(req: Request, res: Response, next: NextFunctio
     return next(new ApiError(422, "Unprocessable Entity", "Body is missing"));
   }
 
-  const { projectId, grantName, recievedDate, grantAmount, industryName } = req.body;
+  const { grantName, grantAmount, industryName } = req.body;
 
   if ([grantName, grantAmount, industryName].some((field) => field === undefined)) {
     return next(new ApiError(422, "Unprocessable Entity", "All grant fields are required"));
@@ -28,20 +28,17 @@ export async function createGrant(req: Request, res: Response, next: NextFunctio
     const industryId = industryResult.rows[0].industry_id;
 
     const insertQuery = `
-            INSERT INTO grants (project_id, grant_name, recieved_date, grant_amount, industry_id)
-            VALUES ($1, $2, $3, $4, $5) 
-            RETURNING grant_name AS "grantName", grant_amount AS "grantAmount", industry_id AS "industryId";
-        `;
+      INSERT INTO grants (grant_name, grant_amount, industry_id)
+      VALUES ($1, $2, $3) 
+      RETURNING 
+          grant_name AS "grantName", 
+          grant_amount AS "grantAmount", 
+          industry_id AS "industryId";
+    `;
 
-    const result = await pool.query(insertQuery, [
-      projectId,
-      grantName,
-      recievedDate,
-      grantAmount,
-      industryId
-    ]);
+    const result = await pool.query(insertQuery, [grantName, grantAmount, industryId]);
 
-    result.rows[0].IndustryName = industryName;
+    result.rows[0].industryName = industryName;
 
     return res
       .status(201)
@@ -50,10 +47,9 @@ export async function createGrant(req: Request, res: Response, next: NextFunctio
     const error = err as DatabaseError;
 
     if (error.code === DbErrorCodes.UNIQUE_VIOLATION) {
-      return next(new ApiError(409, "Conflict", "This grant name already exists for this project"));
-    }
-    if (error.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) {
-      return next(new ApiError(409, "Conflict", "The specified Project ID does not exist"));
+      return next(
+        new ApiError(409, "Conflict", "A grant with this name already exists in the system")
+      );
     }
 
     console.error("Grant Creation Error:", error);
@@ -65,66 +61,60 @@ export async function updateGrant(req: Request, res: Response, next: NextFunctio
   if (!req.body || Object.keys(req.body).length === 0) {
     return next(new ApiError(422, "Unprocessable Entity", "Body is missing"));
   }
-  const { projectId, grantName } = req.params;
-  const { recievedDate, grantAmount, industryId } = req.body;
+
+  const { grantName } = req.params;
+  const { grantAmount, industryId } = req.body;
 
   try {
     const query = `
-            UPDATE grants 
-            SET recieved_date = COALESCE($1, recieved_date), grant_amount = COALESCE($2, grant_amount), 
-                industry_id = COALESCE($3, industry_id)
-            WHERE project_id = $4 AND grant_name = $5 RETURNING *;
-        `;
-    const result = await pool.query(query, [
-      recievedDate,
-      grantAmount,
-      industryId,
-      projectId,
-      grantName
-    ]);
+      UPDATE grants 
+      SET 
+          grant_amount = COALESCE($1, grant_amount), 
+          industry_id = COALESCE($2, industry_id)
+      WHERE grant_name = $3 
+      RETURNING 
+          grant_name AS "grantName", 
+          grant_amount AS "grantAmount", 
+          industry_id AS "industryId";
+    `;
+
+    const result = await pool.query(query, [grantAmount, industryId, grantName]);
 
     if (result.rowCount === 0) {
       return next(new ApiError(404, "Not Found", "Grant not found"));
     }
+
     return res.status(200).json(new ApiResponse(200, result.rows[0], "Grant updated successfully"));
   } catch (err: any) {
-    if (err.code === DbErrorCodes.FOREIGN_KEY_VIOLATION)
+    if (err.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) {
       return next(new ApiError(409, "Conflict", "Industry ID does not exist"));
+    }
     return next(new ApiError(500, "Database Error", "Failed to update grant"));
   }
 }
-
 export async function getGrants(req: Request, res: Response, next: NextFunction) {
   try {
     let queryText = `
-    SELECT 
-    g.grant_name, 
-    g.grant_amount, 
-    g.project_id,
-    i.industry_name 
-    FROM grants g
-    LEFT JOIN industry i ON g.industry_id = i.industry_id
+      SELECT 
+          g.grant_name AS "grantName", 
+          g.grant_amount AS "grantAmount", 
+          i.industry_name AS "industryName"
+      FROM grants g
+      LEFT JOIN industry i ON g.industry_id = i.industry_id
       WHERE 1=1
     `;
 
     const queryParams: any[] = [];
     let paramCounter = 1;
 
-    // Filter = Project ID
-    if (req.query.projectId) {
-      queryText += ` AND project_id = $${paramCounter}`;
-      queryParams.push(req.query.projectId);
-      paramCounter++;
-    }
-
     // Filter = Industry ID
     if (req.query.industryId) {
-      queryText += ` AND industry_id = $${paramCounter}`;
+      queryText += ` AND g.industry_id = $${paramCounter}`;
       queryParams.push(req.query.industryId);
       paramCounter++;
     }
 
-    queryText += ` ORDER BY recieved_date DESC;`;
+    queryText += ` ORDER BY g.grant_name ASC;`;
 
     const result = await pool.query(queryText, queryParams);
 
