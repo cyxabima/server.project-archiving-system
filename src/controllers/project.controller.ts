@@ -23,7 +23,6 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
     // Filter: Domain IDs
     if (req.query.domainId) {
       let domainIdsArray: string[] = [];
-      
       if (typeof req.query.domainId === "string") {
         domainIdsArray = req.query.domainId.split(",");
       } else if (Array.isArray(req.query.domainId)) {
@@ -31,12 +30,13 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
       }
 
       if (domainIdsArray.length > 0) {
+        // The @> is ==> Contains
         conditionQuery += ` AND (
-          p.domain_id = ANY($${paramCounter}::varchar[]) OR 
-          EXISTS (
-            SELECT 1 FROM project_domains pd_arr 
-            WHERE pd_arr.project_id = p.project_id AND pd_arr.domain_id = ANY($${paramCounter}::varchar[])
-          )
+          ARRAY(
+            SELECT domain_id FROM projects WHERE project_id = p.project_id
+            UNION
+            SELECT domain_id FROM project_domains WHERE project_id = p.project_id
+          )::varchar[] @> $${paramCounter}::varchar[]
         )`;
         queryParams.push(domainIdsArray);
         paramCounter++;
