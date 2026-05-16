@@ -28,7 +28,14 @@ export async function createAdmin(req: Request, res: Response, next: NextFunctio
     const userQuery = `
       INSERT INTO users (user_name, user_email, user_contact_no, password, dept_abbreviation, role)
       VALUES ($1, $2, $3, $4, $5, $6) 
-      RETURNING user_id AS "userId", user_name AS "userName", user_email AS "userEmail", dept_abbreviation AS "deptAbbreviation"
+      RETURNING 
+          user_id AS "userId", 
+          user_name AS "userName", 
+          user_email AS "userEmail", 
+          user_contact_no AS "userContactNo",
+          dept_abbreviation AS "deptAbbreviation",
+          role,
+          is_active AS "isActive";
     `;
     const userRes = await client.query(userQuery, [
       userName,
@@ -101,7 +108,14 @@ export async function addFaculty(req: Request, res: Response, next: NextFunction
     const userQuery = `
       INSERT INTO users (user_name, user_email, user_contact_no, password, dept_abbreviation, role)
       VALUES ($1, $2, $3, $4, $5, $6) 
-      RETURNING user_id AS "userId", user_name AS "userName", user_email AS "userEmail"
+      RETURNING 
+          user_id AS "userId", 
+          user_name AS "userName", 
+          user_email AS "userEmail", 
+          user_contact_no AS "userContactNo",
+          dept_abbreviation AS "deptAbbreviation",
+          role,
+          is_active AS "isActive";
     `;
     const userRes = await client.query(userQuery, [
       userName,
@@ -170,7 +184,14 @@ export async function addStaff(req: Request, res: Response, next: NextFunction) 
     const userQuery = `
       INSERT INTO users (user_name, user_email, user_contact_no, password, dept_abbreviation, role)
       VALUES ($1, $2, $3, $4, $5, $6) 
-      RETURNING user_id AS "userId", user_name AS "userName", user_email AS "userEmail"
+      RETURNING 
+          user_id AS "userId", 
+          user_name AS "userName", 
+          user_email AS "userEmail", 
+          user_contact_no AS "userContactNo",
+          dept_abbreviation AS "deptAbbreviation",
+          role,
+          is_active AS "isActive";
     `;
     const userRes = await client.query(userQuery, [
       userName,
