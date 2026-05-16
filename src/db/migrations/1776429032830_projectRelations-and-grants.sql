@@ -10,8 +10,7 @@ CREATE TABLE resources (
 );
 
 CREATE TABLE grants (
-    grant_id VARCHAR(20) PRIMARY KEY,
-    grant_name VARCHAR(50) UNIQUE NOT NULL, 
+    grant_name VARCHAR(50) PRIMARY KEY, 
     grant_amount DECIMAL(12, 2) NOT NULL,
     industry_id VARCHAR(20) NOT NULL, 
     CONSTRAINT fk_grant_ind FOREIGN KEY (industry_id) 
@@ -20,13 +19,13 @@ CREATE TABLE grants (
 
 CREATE TABLE project_grants (
     project_id VARCHAR(20) NOT NULL,
-    grant_id VARCHAR(20) NOT NULL,
+    grant_name VARCHAR(50) NOT NULL,
     received_date DATE NOT NULL,
-    PRIMARY KEY (project_id, grant_id),
+    PRIMARY KEY (project_id, grant_name),
     CONSTRAINT fk_pg_proj FOREIGN KEY (project_id) 
         REFERENCES projects(project_id) ON UPDATE CASCADE ON DELETE CASCADE,
-    CONSTRAINT fk_pg_grant FOREIGN KEY (grant_id) 
-        REFERENCES grants(grant_id) ON UPDATE CASCADE ON DELETE CASCADE
+    CONSTRAINT fk_pg_grant FOREIGN KEY (grant_name) 
+        REFERENCES grants(grant_name) ON UPDATE CASCADE ON DELETE CASCADE
 );
 
 CREATE TABLE project_domains (
