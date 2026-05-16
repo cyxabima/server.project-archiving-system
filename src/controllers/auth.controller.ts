@@ -56,7 +56,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
       adminLevel: user.admin_lvl || null // if not available then assigning null
     };
 
-    const token = jwt.sign(tokenPayload, process.env.JWT_SECRET as string, { expiresIn: "1d" });
+    const token = jwt.sign(tokenPayload, process.env.JWT_SECRET as string, { expiresIn: "30d" });
 
     delete user.password;
 
