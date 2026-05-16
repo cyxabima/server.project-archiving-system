@@ -20,11 +20,27 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
     const queryParams: any[] = [];
     let paramCounter = 1;
 
-    // Filter: Domain ID
+    // Filter: Domain IDs
     if (req.query.domainId) {
-      conditionQuery += ` AND p.domain_id = $${paramCounter}`;
-      queryParams.push(req.query.domainId);
-      paramCounter++;
+      let domainIdsArray: string[] = [];
+      
+      if (typeof req.query.domainId === "string") {
+        domainIdsArray = req.query.domainId.split(",");
+      } else if (Array.isArray(req.query.domainId)) {
+        domainIdsArray = req.query.domainId as string[];
+      }
+
+      if (domainIdsArray.length > 0) {
+        conditionQuery += ` AND (
+          p.domain_id = ANY($${paramCounter}::varchar[]) OR 
+          EXISTS (
+            SELECT 1 FROM project_domains pd_arr 
+            WHERE pd_arr.project_id = p.project_id AND pd_arr.domain_id = ANY($${paramCounter}::varchar[])
+          )
+        )`;
+        queryParams.push(domainIdsArray);
+        paramCounter++;
+      }
     }
 
     // Filter: Department Abbreviation
