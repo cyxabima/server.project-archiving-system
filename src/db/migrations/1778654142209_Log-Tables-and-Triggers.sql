@@ -60,7 +60,7 @@ AFTER INSERT OR UPDATE OR DELETE ON grants
 FOR EACH ROW EXECUTE FUNCTION log_table_changes();
 
 CREATE TRIGGER audit_PD_changes
-AFTER INSERT OR UPDATE OR DELETE ON project_domains
+AFTER INSERT OR UPDATE OR DELETE ON project_domain
 FOR EACH ROW EXECUTE FUNCTION log_table_changes();
 
 CREATE TRIGGER audit_PI_changes
@@ -91,7 +91,7 @@ DROP TRIGGER IF EXISTS audit_externals_changes ON external_superv;
 DROP TRIGGER IF EXISTS audit_projects_changes ON projects;
 DROP TRIGGER IF EXISTS audit_students_changes ON students;
 DROP TRIGGER IF EXISTS audit_grants_changes ON grants;
-DROP TRIGGER IF EXISTS audit_PD_changes ON project_domains;
+DROP TRIGGER IF EXISTS audit_PD_changes ON project_domain;
 DROP TRIGGER IF EXISTS audit_PI_changes ON project_industry;
 DROP TRIGGER IF EXISTS audit_PE_changes ON project_external;
 DROP TRIGGER IF EXISTS audit_PF_changes ON project_faculty;

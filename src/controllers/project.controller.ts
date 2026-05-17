@@ -403,7 +403,7 @@ export async function createProject(req: Request, res: Response, next: NextFunct
 
     // All Domains
     for (const domainId of domainIds) {
-      await client.query(`INSERT INTO project_domains (project_id, domain_id) VALUES ($1, $2);`, [
+      await client.query(`INSERT INTO project_domain (project_id, domain_id) VALUES ($1, $2);`, [
         projectId,
         domainId
       ]);
