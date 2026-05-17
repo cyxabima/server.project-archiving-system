@@ -144,6 +144,7 @@ export async function getExternals(req: Request, res: Response, next: NextFuncti
   }
 }
 
+
 export async function deleteExternal(req: Request, res: Response, next: NextFunction) {
   const { extEmail } = req.params;
 

@@ -184,7 +184,6 @@ export async function getStudents(req: Request, res: Response, next: NextFunctio
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch students"));
   }
 }
-
 export async function deleteStudent(req: Request, res: Response, next: NextFunction) {
   const { seatNo } = req.params;
 
