@@ -4,7 +4,10 @@ import {
   addFaculty,
   addStaff,
   getUsers,
-  getSupervisingFaculty
+  getSupervisingFaculty,
+  updateUser,
+  getUserById,
+  softDeleteUser
 } from "../controllers/user.controller.js";
 import { verifyToken, isAdmin } from "../middleware/auth.middleware.js";
 
@@ -15,5 +18,7 @@ router.post("/faculty", verifyToken, isAdmin, addFaculty);
 router.post("/staff", verifyToken, isAdmin, addStaff);
 router.get("/getUsers", verifyToken, isAdmin, getUsers);
 router.get("/getSupervisingFaculty", verifyToken, isAdmin, getSupervisingFaculty);
-
+router.get("/:id", getUserById);
+router.patch("/:id", updateUser);
+router.delete("/:id", softDeleteUser);
 export default router;
