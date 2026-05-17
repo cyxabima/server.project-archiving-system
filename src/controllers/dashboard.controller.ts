@@ -23,7 +23,7 @@ export async function getDashboardStats(req: Request, res: Response, next: NextF
     `;
 
     const masterResult = await pool.query(masterQuery);
-    
+
     const rawCounts = masterResult.rows[0];
     const dashboardData: Record<string, number | null> = {
       totalFaculty: parseInt(rawCounts.totalFaculty, 10),
@@ -74,9 +74,10 @@ export async function getDashboardStats(req: Request, res: Response, next: NextF
     return res
       .status(200)
       .json(new ApiResponse(200, dashboardData, "Dashboard statistics retrieved successfully"));
-
   } catch (error) {
     console.error("Dashboard Stats Error:", error);
-    return next(new ApiError(500, "Internal Server Error", "Failed to retrieve dashboard statistics"));
+    return next(
+      new ApiError(500, "Internal Server Error", "Failed to retrieve dashboard statistics")
+    );
   }
 }
