@@ -22,7 +22,7 @@ CREATE TABLE grants (
     REFERENCES industry(industry_id) ON UPDATE CASCADE
 );
 
-CREATE TABLE project_domains (
+CREATE TABLE project_domain (
     project_id VARCHAR(20) NOT NULL,
     domain_id VARCHAR(20) NOT NULL,
     PRIMARY KEY (project_id, domain_id),
