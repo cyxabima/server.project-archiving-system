@@ -2,10 +2,7 @@
 CREATE TABLE projects (
     project_id VARCHAR(20) PRIMARY KEY,
     project_title VARCHAR(200) UNIQUE NOT NULL,
-    academic_year VARCHAR(10) NOT NULL,
-    domain_id VARCHAR(20) NOT NULL,
-    CONSTRAINT fk_proj_domain FOREIGN KEY (domain_id) 
-    REFERENCES domains(domain_id) ON UPDATE CASCADE
+    academic_year VARCHAR(10) NOT NULL
 );
 
 CREATE TABLE students (

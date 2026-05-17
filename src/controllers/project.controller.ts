@@ -30,12 +30,9 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
       }
 
       if (domainIdsArray.length > 0) {
-        // The @> is ==> Contains
         conditionQuery += ` AND (
           ARRAY(
-            SELECT domain_id FROM projects WHERE project_id = p.project_id
-            UNION
-            SELECT domain_id FROM project_domains WHERE project_id = p.project_id
+            SELECT domain_id FROM project_domain WHERE project_id = p.project_id
           )::varchar[] @> $${paramCounter}::varchar[]
         )`;
         queryParams.push(domainIdsArray);
@@ -64,21 +61,14 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
       paramCounter++;
     }
 
-    // Filter: Domain Name (Case-Insensitive)
+    // Filter: Domain Name
     if (req.query.domainName && typeof req.query.domainName === "string") {
-      conditionQuery += ` AND (
-        d_main.domain_name ILIKE $${paramCounter} OR 
-        EXISTS (
-            SELECT 1 FROM project_domains pd_name 
-            JOIN domains dom_name ON pd_name.domain_id = dom_name.domain_id 
-            WHERE pd_name.project_id = p.project_id AND dom_name.domain_name ILIKE $${paramCounter}
-        )
-      )`;
+      conditionQuery += ` AND d_main.domain_name ILIKE $${paramCounter}`;
       queryParams.push(`%${req.query.domainName}%`);
       paramCounter++;
     }
 
-    // Filter: Industry Name (Case-Insensitive)
+    // Filter: Industry Name
     if (req.query.industryName && typeof req.query.industryName === "string") {
       conditionQuery += ` AND EXISTS (
         SELECT 1 FROM project_industry pi_name 
@@ -89,7 +79,7 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
       paramCounter++;
     }
 
-    // Filter: Industry-Linked & Grants (sponsored)
+    // Filter: Industry-Linked & Grants
     if (req.query.industries && typeof req.query.industries === "string") {
       const industriesArray = req.query.industries.split(",");
 
@@ -115,11 +105,6 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
         d.dept_name ILIKE $${paramCounter} OR
         d_main.domain_name ILIKE $${paramCounter} OR
         EXISTS (
-            SELECT 1 FROM project_domains pd_search 
-            JOIN domains dom_search ON pd_search.domain_id = dom_search.domain_id 
-            WHERE pd_search.project_id = p.project_id AND dom_search.domain_name ILIKE $${paramCounter}
-        ) OR
-        EXISTS (
             SELECT 1 FROM project_faculty pf_search 
             JOIN users u_search ON pf_search.faculty_id = u_search.user_id 
             WHERE pf_search.project_id = p.project_id AND u_search.user_name ILIKE $${paramCounter}
@@ -138,8 +123,9 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
         WITH FilteredProjects AS (
             SELECT DISTINCT p.project_id
             FROM projects p
-            JOIN domains d_main ON p.domain_id = d_main.domain_id
-            JOIN department d ON d_main.dept_abbreviation = d.dept_abbreviation
+            LEFT JOIN project_domain pd_main ON p.project_id = pd_main.project_id
+            LEFT JOIN domains d_main ON pd_main.domain_id = d_main.domain_id
+            LEFT JOIN department d ON d_main.dept_abbreviation = d.dept_abbreviation
             LEFT JOIN project_industry pi ON p.project_id = pi.project_id
             ${conditionQuery}
         )
@@ -151,17 +137,24 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
             p.project_id AS "id",
             p.project_title AS "title",
             p.abstract AS "abstract",
-            d.dept_name AS "department",
             p.academic_year AS "batch",
             
+            -- Fetch the primary department string (LIMIT 1 handles multi-domain crossover)
+            (
+                SELECT d_sub.dept_name 
+                FROM project_domain pd_sub
+                JOIN domains dom_sub ON pd_sub.domain_id = dom_sub.domain_id
+                JOIN department d_sub ON dom_sub.dept_abbreviation = d_sub.dept_abbreviation
+                WHERE pd_sub.project_id = p.project_id
+                LIMIT 1
+            ) AS "department",
+            
+            -- Simplified Domain JSON Aggregation (No more UNION!)
             (
                 SELECT COALESCE(json_agg(dom.domain_name), '[]'::json)
-                FROM (
-                    SELECT domain_id FROM projects WHERE project_id = p.project_id
-                    UNION
-                    SELECT domain_id FROM project_domains WHERE project_id = p.project_id
-                ) all_doms
-                JOIN domains dom ON all_doms.domain_id = dom.domain_id
+                FROM project_domain pd_agg
+                JOIN domains dom ON pd_agg.domain_id = dom.domain_id
+                WHERE pd_agg.project_id = p.project_id
             ) AS "domains",
 
             (
@@ -185,8 +178,6 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
             ) AS "grants"
 
         FROM projects p
-        JOIN domains d_main ON p.domain_id = d_main.domain_id
-        JOIN department d ON d_main.dept_abbreviation = d.dept_abbreviation
         JOIN FilteredProjects fp ON p.project_id = fp.project_id
         ORDER BY p.academic_year DESC, p.project_title ASC
         LIMIT $${paramCounter} OFFSET $${paramCounter + 1};
@@ -208,7 +199,6 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
     const totalPages = Math.ceil(totalRecords / limit);
     const currentPage = Math.floor(offset / limit) + 1;
 
-    // Build Final Payload
     const responsePayload = {
       data: dataResult.rows,
       meta: {
