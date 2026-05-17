@@ -8,7 +8,7 @@ const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 // filter is embedded within controller getProjects
-router.get("/getProjects", verifyToken, getProjects);
+router.get("/getProjects", getProjects);
 router.get("/pageProjects", verifyToken, listProjects);
 
 router.post(
