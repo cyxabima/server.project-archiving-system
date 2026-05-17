@@ -17,7 +17,6 @@ import groupRouter from "./routes/group.router.js";
 import auditRouter from "./routes/audit.router.js";
 import dashboardRouter from "./routes/dashboard.router.js";
 
-
 const corsOptions = {
   origin: ["http://localhost:3000", "*"],
   methods: ["Get", "POST", "PUT", "DELETE", "PATCH"],
