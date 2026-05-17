@@ -103,3 +103,32 @@ export async function getIndustries(req: Request, res: Response, next: NextFunct
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch industries"));
   }
 }
+
+export async function deleteIndustry(req: Request, res: Response, next: NextFunction) {
+  const { industryId } = req.params;
+
+  try {
+    const query = `
+      DELETE FROM industry 
+      WHERE industry_id = $1 
+      RETURNING industry_id;
+    `;
+
+    const result = await pool.query(query, [industryId]);
+
+    if (result.rowCount === 0) {
+      return next(new ApiError(404, "Not Found", "Industry not found"));
+    }
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, null, "Industry deleted successfully"));
+  } catch (err: any) {
+    if (err.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) {
+      return next(new ApiError(409, "Conflict", "Cannot delete industry because it is currently linked to existing records."));
+    }
+
+    console.error("Delete Industry Error:", err);
+    return next(new ApiError(500, "Database Error", "Failed to delete industry"));
+  }
+}

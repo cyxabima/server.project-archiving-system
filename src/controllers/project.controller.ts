@@ -284,7 +284,7 @@ export async function listProjects(req: Request, res: Response, next: NextFuncti
 
     const countQuery = `SELECT COUNT(*) FROM projects`;
 
-      const [dataResult, countResult] = await Promise.all([
+    const [dataResult, countResult] = await Promise.all([
       pool.query(dataQuery, [limit, offset]),
       pool.query(countQuery)
     ]);
@@ -294,15 +294,20 @@ export async function listProjects(req: Request, res: Response, next: NextFuncti
     const totalPages = Math.ceil(totalRecords / limit);
     const currentPage = Math.floor(offset / limit) + 1;
 
-    return res.status(200).json(new ApiResponse(200, {
-      data: dataResult.rows,
-      meta: {
-        currentPage,
-        totalPages,
-        totalRecords
-      }
-    }, "Projects listed successfully"));
-    
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          data: dataResult.rows,
+          meta: {
+            currentPage,
+            totalPages,
+            totalRecords
+          }
+        },
+        "Projects listed successfully"
+      )
+    );
   } catch (err: unknown) {
     console.error("Project Retrieval Error:", err);
     return next(new ApiError(500, "Database Error", "Failed to retrieve projects"));

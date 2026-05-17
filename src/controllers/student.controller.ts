@@ -184,3 +184,39 @@ export async function getStudents(req: Request, res: Response, next: NextFunctio
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch students"));
   }
 }
+
+export async function deleteStudent(req: Request, res: Response, next: NextFunction) {
+  const { seatNo } = req.params;
+
+  try {
+    const query = `
+      DELETE FROM students 
+      WHERE seat_no = $1 
+      RETURNING seat_no AS "seatNo";
+    `;
+
+    const result = await pool.query(query, [seatNo]);
+
+    if (result.rowCount === 0) {
+      return next(new ApiError(404, "Not Found", "Student not found"));
+    }
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, null, "Student deleted successfully"));
+
+  } catch (err: any) {
+    if (err.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) {
+      return next(
+        new ApiError(
+          409,
+          "Conflict",
+          "Cannot delete student because they are currently assigned to a group or project."
+        )
+      );
+    }
+
+    console.error("Delete Student Error:", err);
+    return next(new ApiError(500, "Database Error", "Failed to delete student"));
+  }
+}
