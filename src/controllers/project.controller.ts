@@ -468,7 +468,7 @@ export async function createProject(req: Request, res: Response, next: NextFunct
     // Format: projects/Batch/{projectID}+{projectTitle}/filename
     // Removing spaces/special chars for URL safety
     const safeTitle = projectTitle.replace(/[^a-zA-Z0-9]/g, "_");
-    const basePath = `projects/${academicYear}/${projectId}+${safeTitle}`;
+    const basePath = `projects/${academicYear}/${projectId}_${safeTitle}`;
 
     const uploadedResources = [];
 
