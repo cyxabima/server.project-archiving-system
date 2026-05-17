@@ -230,73 +230,79 @@ export async function listProjects(req: Request, res: Response, next: NextFuncti
 
   try {
     const dataQuery = ` 
-            SELECT 
-                p.project_id AS "id",
-                p.project_title AS "title",
-                p.abstract AS "abstract",
-                d.dept_name AS "department",
-                p.academic_year AS "batch",
-                
-                -- DOMAINS (Combines primary domain + any additional domains)
-                (
-                    SELECT COALESCE(json_agg(DISTINCT dom.domain_name), '[]'::json)
-                    FROM (
-                        SELECT domain_id FROM projects WHERE project_id = p.project_id
-                        UNION
-                        SELECT domain_id FROM project_domains WHERE project_id = p.project_id
-                    ) all_doms
-                    JOIN domains dom ON all_doms.domain_id = dom.domain_id
-                ) AS "domains",
+        SELECT 
+            p.project_id AS "id",
+            p.project_title AS "title",
+            p.abstract AS "abstract",
+            p.academic_year AS "batch",
+            
+            -- Fetch the primary department string (LIMIT 1 safely handles multi-domain crossover)
+            (
+                SELECT d_sub.dept_name 
+                FROM project_domain pd_sub
+                JOIN domains dom_sub ON pd_sub.domain_id = dom_sub.domain_id
+                JOIN department d_sub ON dom_sub.dept_abbreviation = d_sub.dept_abbreviation
+                WHERE pd_sub.project_id = p.project_id
+                LIMIT 1
+            ) AS "department",
+            
+            -- DOMAINS (Simplified directly from the new many-to-many table)
+            (
+                SELECT COALESCE(json_agg(dom.domain_name), '[]'::json)
+                FROM project_domain pd_agg
+                JOIN domains dom ON pd_agg.domain_id = dom.domain_id
+                WHERE pd_agg.project_id = p.project_id
+            ) AS "domains",
 
-                -- SUPERVISORS (Array of Objects)
-                (
-                    SELECT COALESCE(json_agg(json_build_object('role', pf.supervisory_role, 'name', u.user_name)), '[]'::json)
-                    FROM project_faculty pf
-                    JOIN users u ON pf.faculty_id = u.user_id
-                    WHERE pf.project_id = p.project_id
-                ) AS "supervisors",
+            -- SUPERVISORS (Array of Objects)
+            (
+                SELECT COALESCE(json_agg(json_build_object('role', pf.supervisory_role, 'name', u.user_name)), '[]'::json)
+                FROM project_faculty pf
+                JOIN users u ON pf.faculty_id = u.user_id
+                WHERE pf.project_id = p.project_id
+            ) AS "supervisors",
 
-                -- INDUSTRIES (Array of Objects)
-                (
-                    SELECT COALESCE(json_agg(json_build_object('name', i.industry_name, 'association', pi.association_type)), '[]'::json)
-                    FROM project_industry pi
-                    JOIN industry i ON pi.industry_id = i.industry_id
-                    WHERE pi.project_id = p.project_id
-                ) AS "industries",
+            -- INDUSTRIES (Array of Objects)
+            (
+                SELECT COALESCE(json_agg(json_build_object('name', i.industry_name, 'association', pi.association_type)), '[]'::json)
+                FROM project_industry pi
+                JOIN industry i ON pi.industry_id = i.industry_id
+                WHERE pi.project_id = p.project_id
+            ) AS "industries",
 
-                -- GRANTS (Array of Objects)
-                (
-                    SELECT COALESCE(json_agg(json_build_object('name', g.grant_name, 'amount', g.grant_amount)), '[]'::json)
-                    FROM grants g
-                    WHERE g.project_id = p.project_id
-                ) AS "grants"
+            -- GRANTS (Array of Objects)
+            (
+                SELECT COALESCE(json_agg(json_build_object('name', g.grant_name, 'amount', g.grant_amount)), '[]'::json)
+                FROM grants g
+                WHERE g.project_id = p.project_id
+            ) AS "grants"
 
-            FROM projects p
-            JOIN domains d_main ON p.domain_id = d_main.domain_id
-            JOIN department d ON d_main.dept_abbreviation = d.dept_abbreviation
-            ORDER BY p.project_id DESC
-            LIMIT $1 OFFSET $2;
-        `;
+        FROM projects p
+        ORDER BY p.project_id DESC
+        LIMIT $1 OFFSET $2;
+    `;
 
     const countQuery = `SELECT COUNT(*) FROM projects`;
 
-    const [dataResult, countResult] = await Promise.all([
+      const [dataResult, countResult] = await Promise.all([
       pool.query(dataQuery, [limit, offset]),
       pool.query(countQuery)
     ]);
 
+    // meta data
     const totalRecords = parseInt(countResult.rows[0].count, 10);
     const totalPages = Math.ceil(totalRecords / limit);
     const currentPage = Math.floor(offset / limit) + 1;
 
-    return res.status(200).json({
+    return res.status(200).json(new ApiResponse(200, {
       data: dataResult.rows,
       meta: {
         currentPage,
         totalPages,
         totalRecords
       }
-    });
+    }, "Projects listed successfully"));
+    
   } catch (err: unknown) {
     console.error("Project Retrieval Error:", err);
     return next(new ApiError(500, "Database Error", "Failed to retrieve projects"));
