@@ -10,6 +10,6 @@ const router = Router();
 
 router.post("/", verifyToken, isAdmin, addDepartment);
 router.patch("/:abbreviation", verifyToken, isAdmin, updateDepartment);
-router.get("/getDepartments", verifyToken, getDepartments);
+router.get("/getDepartments", getDepartments);
 
 export default router;
