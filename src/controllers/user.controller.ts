@@ -28,7 +28,14 @@ export async function createAdmin(req: Request, res: Response, next: NextFunctio
     const userQuery = `
       INSERT INTO users (user_name, user_email, user_contact_no, password, dept_abbreviation, role)
       VALUES ($1, $2, $3, $4, $5, $6) 
-      RETURNING user_id AS "userId", user_name AS "userName", user_email AS "userEmail", dept_abbreviation AS "deptAbbreviation"
+      RETURNING 
+          user_id AS "userId", 
+          user_name AS "userName", 
+          user_email AS "userEmail", 
+          user_contact_no AS "userContactNo",
+          dept_abbreviation AS "deptAbbreviation",
+          role,
+          is_active AS "isActive";
     `;
     const userRes = await client.query(userQuery, [
       userName,
@@ -101,7 +108,14 @@ export async function addFaculty(req: Request, res: Response, next: NextFunction
     const userQuery = `
       INSERT INTO users (user_name, user_email, user_contact_no, password, dept_abbreviation, role)
       VALUES ($1, $2, $3, $4, $5, $6) 
-      RETURNING user_id AS "userId", user_name AS "userName", user_email AS "userEmail"
+      RETURNING 
+          user_id AS "userId", 
+          user_name AS "userName", 
+          user_email AS "userEmail", 
+          user_contact_no AS "userContactNo",
+          dept_abbreviation AS "deptAbbreviation",
+          role,
+          is_active AS "isActive";
     `;
     const userRes = await client.query(userQuery, [
       userName,
@@ -170,7 +184,14 @@ export async function addStaff(req: Request, res: Response, next: NextFunction) 
     const userQuery = `
       INSERT INTO users (user_name, user_email, user_contact_no, password, dept_abbreviation, role)
       VALUES ($1, $2, $3, $4, $5, $6) 
-      RETURNING user_id AS "userId", user_name AS "userName", user_email AS "userEmail"
+      RETURNING 
+          user_id AS "userId", 
+          user_name AS "userName", 
+          user_email AS "userEmail", 
+          user_contact_no AS "userContactNo",
+          dept_abbreviation AS "deptAbbreviation",
+          role,
+          is_active AS "isActive";
     `;
     const userRes = await client.query(userQuery, [
       userName,
@@ -255,5 +276,40 @@ export async function getUsers(req: Request, res: Response, next: NextFunction) 
   } catch (error) {
     console.error("Error fetching users:", error);
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch users"));
+  }
+}
+
+export async function getSupervisingFaculty(req: Request, res: Response, next: NextFunction) {
+  try {
+    let queryText = `
+        SELECT DISTINCT 
+            u.user_id, 
+            u.user_name, 
+            u.user_email,
+            u.dept_abbreviation 
+        FROM users u
+        JOIN project_faculty pf ON u.user_id = pf.faculty_id
+        WHERE 1=1
+    `;
+
+    const queryParams: any[] = [];
+    let paramCounter = 1;
+
+    if (req.query.department) {
+      queryText += ` AND u.dept_abbreviation = $${paramCounter}`;
+      queryParams.push(req.query.department);
+      paramCounter++;
+    }
+
+    queryText += ` ORDER BY u.user_name ASC;`;
+
+    const result = await pool.query(queryText, queryParams);
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, result.rows, "Supervising faculty fetched successfully"));
+  } catch (error) {
+    console.error("Error fetching supervising faculty:", error);
+    return next(new ApiError(500, "Internal Server Error", "Failed to fetch faculty"));
   }
 }

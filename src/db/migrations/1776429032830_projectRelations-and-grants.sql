@@ -13,7 +13,7 @@ CREATE TABLE grants (
     project_id VARCHAR(20) NOT NULL,
     grant_name VARCHAR(150) NOT NULL,
     recieved_date DATE NOT NULL,
-    grant_amount DECIMAL(12, 2) NOT NULL,
+    grant_amount DECIMAL(12, 2),
     industry_id VARCHAR(20) NOT NULL, 
     PRIMARY KEY (project_id, grant_name),
     CONSTRAINT fk_grant_proj FOREIGN KEY (project_id) 
@@ -22,7 +22,7 @@ CREATE TABLE grants (
     REFERENCES industry(industry_id) ON UPDATE CASCADE
 );
 
-CREATE TABLE project_domains (
+CREATE TABLE project_domain (
     project_id VARCHAR(20) NOT NULL,
     domain_id VARCHAR(20) NOT NULL,
     PRIMARY KEY (project_id, domain_id),

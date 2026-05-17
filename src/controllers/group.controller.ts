@@ -53,10 +53,16 @@ export async function createGroup(req: Request, res: Response, next: NextFunctio
     }
 
     const insertQuery = `
-            INSERT INTO groups (group_leader, member_2, member_3, member_4, project_id)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING *;
-        `;
+    INSERT INTO groups (group_leader, member_2, member_3, member_4, project_id)
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING 
+        group_id AS "groupId",
+        group_leader AS "groupLeader", 
+        member_2 AS "member2", 
+        member_3 AS "member3", 
+        member_4 AS "member4", 
+        project_id AS "projectId";
+    `;
     const result = await pool.query(insertQuery, [
       groupLeader,
       member2 || null,

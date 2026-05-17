@@ -2,6 +2,8 @@ import { NextFunction, Request, Response } from "express";
 import pool from "../db/index.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
+import { DbErrorCodes, DatabaseError } from "../utils/DbError.js";
+import { supabase } from "../db/config/supabase.js";
 
 // GET /api/v1/projects/getProjects
 export async function getProjects(req: Request, res: Response, next: NextFunction) {
@@ -20,11 +22,24 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
     const queryParams: any[] = [];
     let paramCounter = 1;
 
-    // Filter: Domain ID
+    // Filter: Domain IDs
     if (req.query.domainId) {
-      conditionQuery += ` AND p.domain_id = $${paramCounter}`;
-      queryParams.push(req.query.domainId);
-      paramCounter++;
+      let domainIdsArray: string[] = [];
+      if (typeof req.query.domainId === "string") {
+        domainIdsArray = req.query.domainId.split(",");
+      } else if (Array.isArray(req.query.domainId)) {
+        domainIdsArray = req.query.domainId as string[];
+      }
+
+      if (domainIdsArray.length > 0) {
+        conditionQuery += ` AND (
+          ARRAY(
+            SELECT domain_id FROM project_domain WHERE project_id = p.project_id
+          )::varchar[] @> $${paramCounter}::varchar[]
+        )`;
+        queryParams.push(domainIdsArray);
+        paramCounter++;
+      }
     }
 
     // Filter: Department Abbreviation
@@ -48,21 +63,14 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
       paramCounter++;
     }
 
-    // Filter: Domain Name (Case-Insensitive)
+    // Filter: Domain Name
     if (req.query.domainName && typeof req.query.domainName === "string") {
-      conditionQuery += ` AND (
-        d_main.domain_name ILIKE $${paramCounter} OR 
-        EXISTS (
-            SELECT 1 FROM project_domains pd_name 
-            JOIN domains dom_name ON pd_name.domain_id = dom_name.domain_id 
-            WHERE pd_name.project_id = p.project_id AND dom_name.domain_name ILIKE $${paramCounter}
-        )
-      )`;
+      conditionQuery += ` AND d_main.domain_name ILIKE $${paramCounter}`;
       queryParams.push(`%${req.query.domainName}%`);
       paramCounter++;
     }
 
-    // Filter: Industry Name (Case-Insensitive)
+    // Filter: Industry Name
     if (req.query.industryName && typeof req.query.industryName === "string") {
       conditionQuery += ` AND EXISTS (
         SELECT 1 FROM project_industry pi_name 
@@ -73,7 +81,7 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
       paramCounter++;
     }
 
-    // Filter: Industry-Linked & Grants (sponsored)
+    // Filter: Industry-Linked & Grants
     if (req.query.industries && typeof req.query.industries === "string") {
       const industriesArray = req.query.industries.split(",");
 
@@ -99,11 +107,6 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
         d.dept_name ILIKE $${paramCounter} OR
         d_main.domain_name ILIKE $${paramCounter} OR
         EXISTS (
-            SELECT 1 FROM project_domains pd_search 
-            JOIN domains dom_search ON pd_search.domain_id = dom_search.domain_id 
-            WHERE pd_search.project_id = p.project_id AND dom_search.domain_name ILIKE $${paramCounter}
-        ) OR
-        EXISTS (
             SELECT 1 FROM project_faculty pf_search 
             JOIN users u_search ON pf_search.faculty_id = u_search.user_id 
             WHERE pf_search.project_id = p.project_id AND u_search.user_name ILIKE $${paramCounter}
@@ -122,8 +125,9 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
         WITH FilteredProjects AS (
             SELECT DISTINCT p.project_id
             FROM projects p
-            JOIN domains d_main ON p.domain_id = d_main.domain_id
-            JOIN department d ON d_main.dept_abbreviation = d.dept_abbreviation
+            LEFT JOIN project_domain pd_main ON p.project_id = pd_main.project_id
+            LEFT JOIN domains d_main ON pd_main.domain_id = d_main.domain_id
+            LEFT JOIN department d ON d_main.dept_abbreviation = d.dept_abbreviation
             LEFT JOIN project_industry pi ON p.project_id = pi.project_id
             ${conditionQuery}
         )
@@ -135,17 +139,24 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
             p.project_id AS "id",
             p.project_title AS "title",
             p.abstract AS "abstract",
-            d.dept_name AS "department",
             p.academic_year AS "batch",
             
+            -- Fetch the primary department string (LIMIT 1 handles multi-domain crossover)
+            (
+                SELECT d_sub.dept_name 
+                FROM project_domain pd_sub
+                JOIN domains dom_sub ON pd_sub.domain_id = dom_sub.domain_id
+                JOIN department d_sub ON dom_sub.dept_abbreviation = d_sub.dept_abbreviation
+                WHERE pd_sub.project_id = p.project_id
+                LIMIT 1
+            ) AS "department",
+            
+            -- Simplified Domain JSON Aggregation (No more UNION!)
             (
                 SELECT COALESCE(json_agg(dom.domain_name), '[]'::json)
-                FROM (
-                    SELECT domain_id FROM projects WHERE project_id = p.project_id
-                    UNION
-                    SELECT domain_id FROM project_domains WHERE project_id = p.project_id
-                ) all_doms
-                JOIN domains dom ON all_doms.domain_id = dom.domain_id
+                FROM project_domain pd_agg
+                JOIN domains dom ON pd_agg.domain_id = dom.domain_id
+                WHERE pd_agg.project_id = p.project_id
             ) AS "domains",
 
             (
@@ -169,8 +180,6 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
             ) AS "grants"
 
         FROM projects p
-        JOIN domains d_main ON p.domain_id = d_main.domain_id
-        JOIN department d ON d_main.dept_abbreviation = d.dept_abbreviation
         JOIN FilteredProjects fp ON p.project_id = fp.project_id
         ORDER BY p.academic_year DESC, p.project_title ASC
         LIMIT $${paramCounter} OFFSET $${paramCounter + 1};
@@ -192,7 +201,6 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
     const totalPages = Math.ceil(totalRecords / limit);
     const currentPage = Math.floor(offset / limit) + 1;
 
-    // Build Final Payload
     const responsePayload = {
       data: dataResult.rows,
       meta: {
@@ -224,53 +232,57 @@ export async function listProjects(req: Request, res: Response, next: NextFuncti
 
   try {
     const dataQuery = ` 
-            SELECT 
-                p.project_id AS "id",
-                p.project_title AS "title",
-                p.abstract AS "abstract",
-                d.dept_name AS "department",
-                p.academic_year AS "batch",
-                
-                -- DOMAINS (Combines primary domain + any additional domains)
-                (
-                    SELECT COALESCE(json_agg(DISTINCT dom.domain_name), '[]'::json)
-                    FROM (
-                        SELECT domain_id FROM projects WHERE project_id = p.project_id
-                        UNION
-                        SELECT domain_id FROM project_domains WHERE project_id = p.project_id
-                    ) all_doms
-                    JOIN domains dom ON all_doms.domain_id = dom.domain_id
-                ) AS "domains",
+        SELECT 
+            p.project_id AS "id",
+            p.project_title AS "title",
+            p.abstract AS "abstract",
+            p.academic_year AS "batch",
+            
+            -- Fetch the primary department string (LIMIT 1 safely handles multi-domain crossover)
+            (
+                SELECT d_sub.dept_name 
+                FROM project_domain pd_sub
+                JOIN domains dom_sub ON pd_sub.domain_id = dom_sub.domain_id
+                JOIN department d_sub ON dom_sub.dept_abbreviation = d_sub.dept_abbreviation
+                WHERE pd_sub.project_id = p.project_id
+                LIMIT 1
+            ) AS "department",
+            
+            -- DOMAINS (Simplified directly from the new many-to-many table)
+            (
+                SELECT COALESCE(json_agg(dom.domain_name), '[]'::json)
+                FROM project_domain pd_agg
+                JOIN domains dom ON pd_agg.domain_id = dom.domain_id
+                WHERE pd_agg.project_id = p.project_id
+            ) AS "domains",
 
-                -- SUPERVISORS (Array of Objects)
-                (
-                    SELECT COALESCE(json_agg(json_build_object('role', pf.supervisory_role, 'name', u.user_name)), '[]'::json)
-                    FROM project_faculty pf
-                    JOIN users u ON pf.faculty_id = u.user_id
-                    WHERE pf.project_id = p.project_id
-                ) AS "supervisors",
+            -- SUPERVISORS (Array of Objects)
+            (
+                SELECT COALESCE(json_agg(json_build_object('role', pf.supervisory_role, 'name', u.user_name)), '[]'::json)
+                FROM project_faculty pf
+                JOIN users u ON pf.faculty_id = u.user_id
+                WHERE pf.project_id = p.project_id
+            ) AS "supervisors",
 
-                -- INDUSTRIES (Array of Objects)
-                (
-                    SELECT COALESCE(json_agg(json_build_object('name', i.industry_name, 'association', pi.association_type)), '[]'::json)
-                    FROM project_industry pi
-                    JOIN industry i ON pi.industry_id = i.industry_id
-                    WHERE pi.project_id = p.project_id
-                ) AS "industries",
+            -- INDUSTRIES (Array of Objects)
+            (
+                SELECT COALESCE(json_agg(json_build_object('name', i.industry_name, 'association', pi.association_type)), '[]'::json)
+                FROM project_industry pi
+                JOIN industry i ON pi.industry_id = i.industry_id
+                WHERE pi.project_id = p.project_id
+            ) AS "industries",
 
-                -- GRANTS (Array of Objects)
-                (
-                    SELECT COALESCE(json_agg(json_build_object('name', g.grant_name, 'amount', g.grant_amount)), '[]'::json)
-                    FROM grants g
-                    WHERE g.project_id = p.project_id
-                ) AS "grants"
+            -- GRANTS (Array of Objects)
+            (
+                SELECT COALESCE(json_agg(json_build_object('name', g.grant_name, 'amount', g.grant_amount)), '[]'::json)
+                FROM grants g
+                WHERE g.project_id = p.project_id
+            ) AS "grants"
 
-            FROM projects p
-            JOIN domains d_main ON p.domain_id = d_main.domain_id
-            JOIN department d ON d_main.dept_abbreviation = d.dept_abbreviation
-            ORDER BY p.project_id DESC
-            LIMIT $1 OFFSET $2;
-        `;
+        FROM projects p
+        ORDER BY p.project_id DESC
+        LIMIT $1 OFFSET $2;
+    `;
 
     const countQuery = `SELECT COUNT(*) FROM projects`;
 
@@ -279,20 +291,270 @@ export async function listProjects(req: Request, res: Response, next: NextFuncti
       pool.query(countQuery)
     ]);
 
+    // meta data
     const totalRecords = parseInt(countResult.rows[0].count, 10);
     const totalPages = Math.ceil(totalRecords / limit);
     const currentPage = Math.floor(offset / limit) + 1;
 
-    return res.status(200).json({
-      data: dataResult.rows,
-      meta: {
-        currentPage,
-        totalPages,
-        totalRecords
-      }
-    });
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          data: dataResult.rows,
+          meta: {
+            currentPage,
+            totalPages,
+            totalRecords
+          }
+        },
+        "Projects listed successfully"
+      )
+    );
   } catch (err: unknown) {
     console.error("Project Retrieval Error:", err);
     return next(new ApiError(500, "Database Error", "Failed to retrieve projects"));
+  }
+}
+
+export async function createProject(req: Request, res: Response, next: NextFunction) {
+  // Extracting Files from Multer
+  const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+  const reportFile = files?.reportFile?.[0];
+  const resourceFile = files?.resourceFile?.[0];
+
+  if (!reportFile) {
+    return next(new ApiError(400, "Bad Request", "Project Report (PDF) is mandatory."));
+  }
+
+  // Parsing Text Data from FormData
+  // Note: FormData sends everything as strings, so we parse JSON strings back into arrays/objects
+  const {
+    projectTitle,
+    abstract,
+    academicYear,
+    groupId,
+    industryName,
+    associationType,
+    extEmail,
+    grantName,
+    grantAmount,
+    recievedDate
+  } = req.body;
+
+  let domainIds: string[] = [];
+  let facultySupervisors: { userId: string; role: string; remark?: string }[] = [];
+
+  try {
+    domainIds = JSON.parse(req.body.domainIds);
+    facultySupervisors = JSON.parse(req.body.facultySupervisors);
+  } catch (e) {
+    return next(
+      new ApiError(400, "Bad Request", "Invalid JSON format for domains or supervisors.")
+    );
+  }
+
+  if (
+    !projectTitle ||
+    !abstract ||
+    !academicYear ||
+    !groupId ||
+    domainIds.length === 0 ||
+    facultySupervisors.length === 0
+  ) {
+    return next(
+      new ApiError(
+        422,
+        "Unprocessable Entity",
+        "Missing core project details, domains, group, or faculty."
+      )
+    );
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // Create Project
+    const primaryDomainId = domainIds[0];
+    const deptRes = await client.query(
+      `SELECT dept_abbreviation FROM domains WHERE domain_id = $1`,
+      [primaryDomainId]
+    );
+
+    if (deptRes.rows.length === 0) {
+      throw new Error("DOMAIN_NOT_FOUND");
+    }
+    const deptAbbr = deptRes.rows[0].dept_abbreviation;
+
+    const projectRes = await client.query(
+      `INSERT INTO projects (project_title, abstract, academic_year, dept_abbreviation) 
+       VALUES ($1, $2, $3, $4) RETURNING project_id;`,
+      [projectTitle, abstract, academicYear, deptAbbr]
+    );
+    const projectId = projectRes.rows[0].project_id;
+
+    // Link the Group
+    const groupRes = await client.query(
+      `UPDATE groups SET project_id = $1 WHERE group_id = $2 RETURNING group_id;`,
+      [projectId, groupId]
+    );
+    if (groupRes.rowCount === 0) throw new Error("GROUP_NOT_FOUND");
+
+    // All Domains
+    for (const domainId of domainIds) {
+      await client.query(`INSERT INTO project_domain (project_id, domain_id) VALUES ($1, $2);`, [
+        projectId,
+        domainId
+      ]);
+    }
+
+    // Faculty Supervisors
+    for (const faculty of facultySupervisors) {
+      await client.query(
+        `INSERT INTO project_faculty (project_id, faculty_id, supervisory_role, remark) 
+         VALUES ($1, $2, $3, $4);`,
+        [projectId, faculty.userId, faculty.role, faculty.remark || null]
+      );
+    }
+
+    // Industry, External & Grants
+    let industryId = null;
+
+    if (industryName) {
+      const indRes = await client.query(
+        `SELECT industry_id FROM industry WHERE industry_name = $1`,
+        [industryName]
+      );
+      if (indRes.rows.length === 0) throw new Error("INDUSTRY_NOT_FOUND");
+      industryId = indRes.rows[0].industry_id;
+
+      await client.query(
+        `INSERT INTO project_industry (project_id, industry_id, association_type) VALUES ($1, $2, $3);`,
+        [projectId, industryId, associationType || "Partner"]
+      );
+
+      // External Supervisor
+      if (extEmail) {
+        const extRes = await client.query(
+          `SELECT ext_email FROM external_superv WHERE ext_email = $1`,
+          [extEmail]
+        );
+        if (extRes.rows.length === 0) throw new Error("EXTERNAL_NOT_FOUND");
+
+        await client.query(
+          `INSERT INTO project_external (project_id, ext_email, industry_feedback) VALUES ($1, $2, NULL);`,
+          [projectId, extEmail]
+        );
+      }
+
+      // Grants
+      if (grantName && recievedDate) {
+        await client.query(
+          `INSERT INTO grants (project_id, grant_name, recieved_date, grant_amount, industry_id) 
+           VALUES ($1, $2, $3, $4, $5);`,
+          [projectId, grantName, recievedDate, grantAmount || null, industryId]
+        );
+      }
+    }
+
+    // STEP 6: Upload to Supabase Buckets
+    // Format: projects/Batch/{projectID}+{projectTitle}/filename
+    // Removing spaces/special chars for URL safety
+    const safeTitle = projectTitle.replace(/[^a-zA-Z0-9]/g, "_");
+    const basePath = `projects/${academicYear}/${projectId}+${safeTitle}`;
+
+    const uploadedResources = [];
+
+    // Upload Report
+    const reportPath = `${basePath}/${reportFile.originalname}`;
+    const { error: reportErr } = await supabase.storage
+      .from("project-resources")
+      .upload(reportPath, reportFile.buffer, { contentType: reportFile.mimetype });
+    if (reportErr) throw new Error("SUPABASE_UPLOAD_FAILED");
+
+    // storing Public URL to DB
+    const reportUrl = supabase.storage.from("project-resources").getPublicUrl(reportPath)
+      .data.publicUrl;
+    await client.query(
+      `INSERT INTO resources (project_id, resource_name, resource_path, mime_type) VALUES ($1, $2, $3, $4);`,
+      [projectId, "Report", reportUrl, reportFile.mimetype]
+    );
+    uploadedResources.push({ name: "Report", url: reportUrl });
+
+    // Upload ZIP Resource
+    if (resourceFile) {
+      const zipPath = `${basePath}/${resourceFile.originalname}`;
+      const { error: zipErr } = await supabase.storage
+        .from("project-resources")
+        .upload(zipPath, resourceFile.buffer, { contentType: resourceFile.mimetype });
+      if (zipErr) throw new Error("SUPABASE_UPLOAD_FAILED");
+
+      const zipUrl = supabase.storage.from("project-resources").getPublicUrl(zipPath)
+        .data.publicUrl;
+      await client.query(
+        `INSERT INTO resources (project_id, resource_name, resource_path, mime_type) VALUES ($1, $2, $3, $4);`,
+        [projectId, "Source Code / Assets", zipUrl, resourceFile.mimetype]
+      );
+      uploadedResources.push({ name: "Source Code / Assets", url: zipUrl });
+    }
+
+    await client.query("COMMIT");
+
+    const finalPayload = {
+      projectId,
+      projectTitle,
+      abstract,
+      academicYear,
+      groupId,
+      domains: domainIds,
+      facultySupervisors,
+      industryDetails: industryName ? { industryName, associationType, extEmail, grantName } : null,
+      resources: uploadedResources
+    };
+
+    return res
+      .status(201)
+      .json(
+        new ApiResponse(
+          201,
+          finalPayload,
+          "Project completely registered and files uploaded successfully."
+        )
+      );
+  } catch (error: any) {
+    await client.query("ROLLBACK");
+    console.error("Project Creation Transaction Failed:", error);
+
+    if (error.message === "GROUP_NOT_FOUND")
+      return next(new ApiError(404, "Not Found", "Provided Group ID does not exist."));
+    if (error.message === "INDUSTRY_NOT_FOUND")
+      return next(new ApiError(404, "Not Found", `Industry '${industryName}' does not exist.`));
+    if (error.message === "EXTERNAL_NOT_FOUND")
+      return next(
+        new ApiError(404, "Not Found", `External supervisor '${extEmail}' does not exist.`)
+      );
+    if (error.message === "SUPABASE_UPLOAD_FAILED")
+      return next(
+        new ApiError(
+          502,
+          "Bad Gateway",
+          "Failed to upload files to cloud storage. Database changes rolled back."
+        )
+      );
+
+    const dbError = error as DatabaseError;
+    if (dbError.code === DbErrorCodes.UNIQUE_VIOLATION)
+      return next(new ApiError(409, "Conflict", "A project with this title already exists."));
+    if (dbError.code === DbErrorCodes.FOREIGN_KEY_VIOLATION)
+      return next(
+        new ApiError(409, "Conflict", "One of the provided Domain IDs or Faculty IDs is invalid.")
+      );
+
+    return next(
+      new ApiError(500, "Internal Server Error", "Failed to complete project registration process.")
+    );
+  } finally {
+    client.release();
   }
 }

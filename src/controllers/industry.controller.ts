@@ -19,7 +19,7 @@ export async function createIndustry(req: Request, res: Response, next: NextFunc
     const query = `
             INSERT INTO industry (industry_name, location, industry_type, industry_email)
             VALUES ($1, $2, $3, $4) 
-            RETURNING industry_id AS "industryId", industry_name AS "industryName";
+            RETURNING industry_id AS "industryId", industry_name AS "industryName", location AS "IndustryLocation", industry_email AS "IndustryEmail";
         `;
     const result = await pool.query(query, [industryName, location, industryType, industryEmail]);
 

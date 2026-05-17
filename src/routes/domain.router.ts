@@ -11,7 +11,7 @@ const router = Router();
 
 router.post("/", verifyToken, isAdmin, createDomain);
 router.patch("/:domainId", verifyToken, isAdmin, updateDomain);
-router.get("/", verifyToken, getAllDomains);
-router.get("/department/:deptAbbreviation", verifyToken, getDomainsByDept);
+router.get("/", getAllDomains);
+router.get("/department/:deptAbbreviation", getDomainsByDept);
 
 export default router;
