@@ -42,19 +42,23 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER set_domain_id BEFORE INSERT ON domains 
 FOR EACH ROW WHEN (NEW.domain_id IS NULL) EXECUTE FUNCTION generate_domain_id();
 
--- PROJECT ID TRIGGER (Smart Lookup)
+-- PROJECT ID TRIGGER
 CREATE OR REPLACE FUNCTION generate_project_id() RETURNS TRIGGER AS $$
 DECLARE
     next_num INT;
     dept_abbr VARCHAR;
 BEGIN
-    -- Look up the department abbreviation from the connected domain!
-    SELECT dept_abbreviation INTO dept_abbr FROM domains WHERE domain_id = NEW.domain_id;
+    dept_abbr := NEW.dept_abbreviation;
 
+    -- Find the highest existing number for this specific department
     SELECT COALESCE(MAX(CAST(SPLIT_PART(project_id, '-', 3) AS INT)), 0) + 1
-    INTO next_num FROM projects WHERE project_id LIKE 'PROJ-' || dept_abbr || '-%';
+    INTO next_num 
+    FROM projects 
+    WHERE project_id LIKE 'PROJ-' || dept_abbr || '-%';
 
+    -- Generate ID (e.g: PROJ-CIS-001)
     NEW.project_id := 'PROJ-' || dept_abbr || '-' || LPAD(next_num::TEXT, GREATEST(3, LENGTH(next_num::TEXT)), '0');
+    
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

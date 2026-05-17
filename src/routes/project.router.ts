@@ -14,7 +14,7 @@ router.get("/pageProjects", verifyToken, listProjects);
 router.post(
   "/create",
   upload.fields([
-    { name: "reportFile", maxCount: 1 }, 
+    { name: "reportFile", maxCount: 1 },
     { name: "resourceFile", maxCount: 1 }
   ]),
   createProject
