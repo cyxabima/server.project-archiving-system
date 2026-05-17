@@ -15,6 +15,8 @@ import grantRouter from "./routes/grant.router.js";
 import studentRouter from "./routes/student.router.js";
 import groupRouter from "./routes/group.router.js";
 import auditRouter from "./routes/audit.router.js";
+import dashboardRouter from "./routes/dashboard.router.js";
+
 
 const corsOptions = {
   origin: ["http://localhost:3000", "*"],
@@ -43,6 +45,7 @@ app.use("/api/v1/grants", grantRouter);
 app.use("/api/v1/students", studentRouter);
 app.use("/api/v1/group", groupRouter);
 app.use("/api/v1/audit", auditRouter);
+app.use("/api/v1/dashboard", dashboardRouter);
 
 // health endpoint
 app.get("/healthz", (_: Request, res: Response) => {
