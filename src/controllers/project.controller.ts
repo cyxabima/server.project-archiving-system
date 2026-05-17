@@ -177,7 +177,13 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
                 SELECT COALESCE(json_agg(json_build_object('name', g.grant_name, 'amount', g.grant_amount)), '[]'::json)
                 FROM grants g
                 WHERE g.project_id = p.project_id
-            ) AS "grants"
+            ) AS "grants",
+
+            (
+                SELECT COALESCE(json_agg(json_build_object('name', r.resource_name, 'url', r.resource_path, 'type', r.mime_type)), '[]'::json)
+                FROM resources r
+                WHERE r.project_id = p.project_id
+            ) AS "resources"
 
         FROM projects p
         JOIN FilteredProjects fp ON p.project_id = fp.project_id
@@ -462,7 +468,7 @@ export async function createProject(req: Request, res: Response, next: NextFunct
     // Format: projects/Batch/{projectID}+{projectTitle}/filename
     // Removing spaces/special chars for URL safety
     const safeTitle = projectTitle.replace(/[^a-zA-Z0-9]/g, "_");
-    const basePath = `projects/${academicYear}/${projectId}+${safeTitle}`;
+    const basePath = `projects/${academicYear}/${projectId}_${safeTitle}`;
 
     const uploadedResources = [];
 
