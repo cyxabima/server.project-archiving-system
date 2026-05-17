@@ -2,6 +2,8 @@ import { NextFunction, Request, Response } from "express";
 import pool from "../db/index.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
+import { DbErrorCodes, DatabaseError } from "../utils/DbError.js";
+import { supabase } from "../db/config/supabase.js";
 
 // GET /api/v1/projects/getProjects
 export async function getProjects(req: Request, res: Response, next: NextFunction) {
@@ -306,5 +308,187 @@ export async function listProjects(req: Request, res: Response, next: NextFuncti
   } catch (err: unknown) {
     console.error("Project Retrieval Error:", err);
     return next(new ApiError(500, "Database Error", "Failed to retrieve projects"));
+  }
+}
+
+
+export async function createProject(req: Request, res: Response, next: NextFunction) {
+  
+  // Extracting Files from Multer
+  const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+  const reportFile = files?.reportFile?.[0];
+  const resourceFile = files?.resourceFile?.[0];
+
+  if (!reportFile) {
+    return next(new ApiError(400, "Bad Request", "Project Report (PDF) is mandatory."));
+  }
+
+  // Parsing Text Data from FormData
+  // Note: FormData sends everything as strings, so we parse JSON strings back into arrays/objects
+  const {
+    projectTitle,
+    abstract,
+    academicYear,
+    groupId,
+    industryName,
+    associationType,
+    extEmail,
+    grantName,
+    grantAmount,
+    recievedDate
+  } = req.body;
+
+  let domainIds: string[] = [];
+  let facultySupervisors: { userId: string; role: string; remark?: string }[] = [];
+
+  try {
+    domainIds = JSON.parse(req.body.domainIds);
+    facultySupervisors = JSON.parse(req.body.facultySupervisors);
+  } catch (e) {
+    return next(new ApiError(400, "Bad Request", "Invalid JSON format for domains or supervisors."));
+  }
+
+  if (!projectTitle || !abstract || !academicYear || !groupId || domainIds.length === 0 || facultySupervisors.length === 0) {
+    return next(new ApiError(422, "Unprocessable Entity", "Missing core project details, domains, group, or faculty."));
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // Create Project
+    const projectRes = await client.query(
+      `INSERT INTO projects (project_title, abstract, academic_year) 
+       VALUES ($1, $2, $3) RETURNING project_id;`,
+      [projectTitle, abstract, academicYear]
+    );
+    const projectId = projectRes.rows[0].project_id;
+
+    // Link the Group
+    const groupRes = await client.query(
+      `UPDATE groups SET project_id = $1 WHERE group_id = $2 RETURNING group_id;`,
+      [projectId, groupId]
+    );
+    if (groupRes.rowCount === 0) throw new Error("GROUP_NOT_FOUND");
+
+    // All Domains
+    for (const domainId of domainIds) {
+      await client.query(
+        `INSERT INTO project_domains (project_id, domain_id) VALUES ($1, $2);`,
+        [projectId, domainId]
+      );
+    }
+
+    // Faculty Supervisors
+    for (const faculty of facultySupervisors) {
+      await client.query(
+        `INSERT INTO project_faculty (project_id, faculty_id, supervisory_role, remark) 
+         VALUES ($1, $2, $3, $4);`,
+        [projectId, faculty.userId, faculty.role, faculty.remark || null]
+      );
+    }
+
+    // Industry, External & Grants
+    let industryId = null;
+
+    if (industryName) {
+      const indRes = await client.query(`SELECT industry_id FROM industry WHERE industry_name = $1`, [industryName]);
+      if (indRes.rows.length === 0) throw new Error("INDUSTRY_NOT_FOUND");
+      industryId = indRes.rows[0].industry_id;
+
+      await client.query(
+        `INSERT INTO project_industry (project_id, industry_id, association_type) VALUES ($1, $2, $3);`,
+        [projectId, industryId, associationType || "Partner"]
+      );
+
+      // External Supervisor
+      if (extEmail) {
+        const extRes = await client.query(`SELECT ext_email FROM external_superv WHERE ext_email = $1`, [extEmail]);
+        if (extRes.rows.length === 0) throw new Error("EXTERNAL_NOT_FOUND");
+        
+        await client.query(
+          `INSERT INTO project_external (project_id, ext_email, industry_feedback) VALUES ($1, $2, NULL);`,
+          [projectId, extEmail]
+        );
+      }
+
+      // Grants
+      if (grantName && recievedDate) {
+        await client.query(
+          `INSERT INTO grants (project_id, grant_name, recieved_date, grant_amount, industry_id) 
+           VALUES ($1, $2, $3, $4, $5);`,
+          [projectId, grantName, recievedDate, grantAmount || null, industryId]
+        );
+      }
+    }
+
+    // STEP 6: Upload to Supabase Buckets
+    // Format: projects/Batch/{projectID}+{projectTitle}/filename
+    // Removing spaces/special chars for URL safety
+    const safeTitle = projectTitle.replace(/[^a-zA-Z0-9]/g, "_"); 
+    const basePath = `projects/${academicYear}/${projectId}+${safeTitle}`;
+    
+    const uploadedResources = [];
+
+    // Upload Report 
+    const reportPath = `${basePath}/${reportFile.originalname}`;
+    const { error: reportErr } = await supabase.storage.from("project-resources").upload(reportPath, reportFile.buffer, { contentType: reportFile.mimetype });
+    if (reportErr) throw new Error("SUPABASE_UPLOAD_FAILED");
+    
+    // storing Public URL to DB
+    const reportUrl = supabase.storage.from("project-resources").getPublicUrl(reportPath).data.publicUrl;
+    await client.query(
+      `INSERT INTO resources (project_id, resource_name, resource_path, mime_type) VALUES ($1, $2, $3, $4);`,
+      [projectId, "Report", reportUrl, reportFile.mimetype]
+    );
+    uploadedResources.push({ name: "Report", url: reportUrl });
+
+    // Upload ZIP Resource
+    if (resourceFile) {
+      const zipPath = `${basePath}/${resourceFile.originalname}`;
+      const { error: zipErr } = await supabase.storage.from("project-resources").upload(zipPath, resourceFile.buffer, { contentType: resourceFile.mimetype });
+      if (zipErr) throw new Error("SUPABASE_UPLOAD_FAILED");
+
+      const zipUrl = supabase.storage.from("project-resources").getPublicUrl(zipPath).data.publicUrl;
+      await client.query(
+        `INSERT INTO resources (project_id, resource_name, resource_path, mime_type) VALUES ($1, $2, $3, $4);`,
+        [projectId, "Source Code / Assets", zipUrl, resourceFile.mimetype]
+      );
+      uploadedResources.push({ name: "Source Code / Assets", url: zipUrl });
+    }
+
+    await client.query("COMMIT");
+
+    const finalPayload = {
+      projectId,
+      projectTitle,
+      abstract,
+      academicYear,
+      groupId,
+      domains: domainIds,
+      facultySupervisors,
+      industryDetails: industryName ? { industryName, associationType, extEmail, grantName } : null,
+      resources: uploadedResources
+    };
+
+    return res.status(201).json(new ApiResponse(201, finalPayload, "Project completely registered and files uploaded successfully."));
+
+  } catch (error: any) {
+    await client.query("ROLLBACK");
+    console.error("Project Creation Transaction Failed:", error);
+
+    if (error.message === "GROUP_NOT_FOUND") return next(new ApiError(404, "Not Found", "Provided Group ID does not exist."));
+    if (error.message === "INDUSTRY_NOT_FOUND") return next(new ApiError(404, "Not Found", `Industry '${industryName}' does not exist.`));
+    if (error.message === "EXTERNAL_NOT_FOUND") return next(new ApiError(404, "Not Found", `External supervisor '${extEmail}' does not exist.`));
+    if (error.message === "SUPABASE_UPLOAD_FAILED") return next(new ApiError(502, "Bad Gateway", "Failed to upload files to cloud storage. Database changes rolled back."));
+    
+    const dbError = error as DatabaseError;
+    if (dbError.code === DbErrorCodes.UNIQUE_VIOLATION) return next(new ApiError(409, "Conflict", "A project with this title already exists."));
+    if (dbError.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) return next(new ApiError(409, "Conflict", "One of the provided Domain IDs or Faculty IDs is invalid."));
+
+    return next(new ApiError(500, "Internal Server Error", "Failed to complete project registration process."));
+  } finally {
+    client.release();
   }
 }
