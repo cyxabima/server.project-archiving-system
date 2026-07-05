@@ -73,31 +73,81 @@ export async function updateIndustry(req: Request, res: Response, next: NextFunc
   }
 }
 
+// GET /api/v1/industries
 export async function getIndustries(req: Request, res: Response, next: NextFunction) {
-  try {
-    let queryText = `
-      SELECT industry_id, industry_name, location, industry_type, industry_email
-      FROM industry
-      WHERE 1=1
-    `;
+  // Default pagination values
+  let limit = 20;
+  let offset = 0;
 
+  if (req.query.limit) {
+    limit = parseInt(req.query.limit as string, 10);
+    if (isNaN(limit)) limit = 20;
+  }
+
+  if (req.query.offset) {
+    offset = parseInt(req.query.offset as string, 10);
+    if (isNaN(offset)) offset = 0;
+  }
+
+  try {
+    let conditionQuery = `WHERE 1=1`;
     const queryParams: any[] = [];
     let paramCounter = 1;
 
+    // Search Parameter (case-insensitive partial match)
+    if (req.query.search) {
+      const searchTerm = `%${req.query.search}%`;
+      conditionQuery += ` AND (industry_name ILIKE $${paramCounter} OR location ILIKE $${paramCounter} OR industry_email ILIKE $${paramCounter})`;
+      queryParams.push(searchTerm);
+      paramCounter++;
+    }
+
     // Filter = Industry Type
     if (req.query.industryType) {
-      queryText += ` AND industry_type = $${paramCounter}`;
+      conditionQuery += ` AND industry_type = $${paramCounter}`;
       queryParams.push(req.query.industryType);
       paramCounter++;
     }
 
-    queryText += ` ORDER BY industry_name ASC;`;
+    const dataQuery = `
+      SELECT industry_id, industry_name, location, industry_type, industry_email
+      FROM industry
+      ${conditionQuery}
+      ORDER BY industry_name ASC
+      LIMIT $${paramCounter} OFFSET $${paramCounter + 1};
+    `;
 
-    const result = await pool.query(queryText, queryParams);
+    const countQuery = `
+      SELECT COUNT(*) 
+      FROM industry
+      ${conditionQuery};
+    `;
+
+    const dataParams = [...queryParams, limit, offset];
+
+    // Execute both queries concurrently
+    const [dataResult, countResult] = await Promise.all([
+      pool.query(dataQuery, dataParams),
+      pool.query(countQuery, queryParams)
+    ]);
+
+    // Calculate pagination metadata
+    const totalRecords = parseInt(countResult.rows[0].count, 10);
+    const totalPages = Math.ceil(totalRecords / limit);
+    const currentPage = Math.floor(offset / limit) + 1;
+
+    const responsePayload = {
+      data: dataResult.rows,
+      meta: {
+        currentPage,
+        totalPages,
+        totalRecords
+      }
+    };
 
     return res
       .status(200)
-      .json(new ApiResponse(200, result.rows, "Industries fetched successfully"));
+      .json(new ApiResponse(200, responsePayload, "Industries fetched successfully"));
   } catch (error) {
     console.error("Error fetching industries:", error);
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch industries"));
