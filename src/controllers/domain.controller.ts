@@ -74,9 +74,69 @@ export async function updateDomain(req: Request, res: Response, next: NextFuncti
 
 // GET /api/v1/domains
 export async function getAllDomains(req: Request, res: Response, next: NextFunction) {
+  // Default pagination values
+  let limit = 20;
+  let offset = 0;
+
+  if (req.query.limit) {
+    limit = parseInt(req.query.limit as string, 10);
+    if (isNaN(limit)) limit = 20;
+  }
+
+  if (req.query.offset) {
+    offset = parseInt(req.query.offset as string, 10);
+    if (isNaN(offset)) offset = 0;
+  }
+
   try {
-    const result = await pool.query(`SELECT * FROM domains ORDER BY domain_name ASC;`);
-    return res.status(200).json(new ApiResponse(200, result.rows, "Domains fetched successfully"));
+    let conditionQuery = `WHERE 1=1`;
+    const queryParams: any[] = [];
+    let paramCounter = 1;
+
+    // Search Parameter (case-insensitive partial match)
+    if (req.query.search) {
+      const searchTerm = `%${req.query.search}%`;
+      conditionQuery += ` AND domain_name ILIKE $${paramCounter}`;
+      queryParams.push(searchTerm);
+      paramCounter++;
+    }
+
+    const dataQuery = `
+      SELECT * FROM domains
+      ${conditionQuery}
+      ORDER BY domain_name ASC
+      LIMIT $${paramCounter} OFFSET $${paramCounter + 1};
+    `;
+
+    const countQuery = `
+      SELECT COUNT(*) 
+      FROM domains
+      ${conditionQuery};
+    `;
+
+    const dataParams = [...queryParams, limit, offset];
+
+    const [dataResult, countResult] = await Promise.all([
+      pool.query(dataQuery, dataParams),
+      pool.query(countQuery, queryParams)
+    ]);
+
+    const totalRecords = parseInt(countResult.rows[0].count, 10);
+    const totalPages = Math.ceil(totalRecords / limit);
+    const currentPage = Math.floor(offset / limit) + 1;
+
+    const responsePayload = {
+      data: dataResult.rows,
+      meta: {
+        currentPage,
+        totalPages,
+        totalRecords
+      }
+    };
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, responsePayload, "Domains fetched successfully"));
   } catch (error) {
     console.error("Error fetching domains:", error);
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch domains"));
