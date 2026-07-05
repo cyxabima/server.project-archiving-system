@@ -93,31 +93,81 @@ export async function updateDepartment(req: Request, res: Response, next: NextFu
   }
 }
 
+// GET /api/v1/departments
 export async function getDepartments(req: Request, res: Response, next: NextFunction) {
-  try {
-    let queryText = `
-      SELECT dept_abbreviation, dept_name
-      FROM department
-      WHERE 1=1
-    `;
+  // Default pagination values
+  let limit = 20;
+  let offset = 0;
 
+  if (req.query.limit) {
+    limit = parseInt(req.query.limit as string, 10);
+    if (isNaN(limit)) limit = 20;
+  }
+
+  if (req.query.offset) {
+    offset = parseInt(req.query.offset as string, 10);
+    if (isNaN(offset)) offset = 0;
+  }
+
+  try {
+    let conditionQuery = `WHERE 1=1`;
     const queryParams: any[] = [];
     let paramCounter = 1;
 
+    // Search Parameter (case-insensitive partial match)
+    if (req.query.search) {
+      const searchTerm = `%${req.query.search}%`;
+      conditionQuery += ` AND (dept_name ILIKE $${paramCounter} OR dept_abbreviation ILIKE $${paramCounter})`;
+      queryParams.push(searchTerm);
+      paramCounter++;
+    }
+
     // Filter = Exact Department Abbreviation
     if (req.query.deptAbbreviation) {
-      queryText += ` AND dept_abbreviation = $${paramCounter}`;
+      conditionQuery += ` AND dept_abbreviation = $${paramCounter}`;
       queryParams.push(req.query.deptAbbreviation);
       paramCounter++;
     }
 
-    queryText += ` ORDER BY dept_abbreviation ASC;`;
+    const dataQuery = `
+      SELECT dept_abbreviation, dept_name
+      FROM department
+      ${conditionQuery}
+      ORDER BY dept_abbreviation ASC
+      LIMIT $${paramCounter} OFFSET $${paramCounter + 1};
+    `;
 
-    const result = await pool.query(queryText, queryParams);
+    const countQuery = `
+      SELECT COUNT(*) 
+      FROM department
+      ${conditionQuery};
+    `;
+
+    const dataParams = [...queryParams, limit, offset];
+
+    // Execute both queries concurrently
+    const [dataResult, countResult] = await Promise.all([
+      pool.query(dataQuery, dataParams),
+      pool.query(countQuery, queryParams)
+    ]);
+
+    // Calculate pagination metadata
+    const totalRecords = parseInt(countResult.rows[0].count, 10);
+    const totalPages = Math.ceil(totalRecords / limit);
+    const currentPage = Math.floor(offset / limit) + 1;
+
+    const responsePayload = {
+      data: dataResult.rows,
+      meta: {
+        currentPage,
+        totalPages,
+        totalRecords
+      }
+    };
 
     return res
       .status(200)
-      .json(new ApiResponse(200, result.rows, "Departments fetched successfully"));
+      .json(new ApiResponse(200, responsePayload, "Departments fetched successfully"));
   } catch (error) {
     console.error("Error fetching departments:", error);
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch departments"));
