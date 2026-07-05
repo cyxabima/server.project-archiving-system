@@ -365,3 +365,237 @@ export async function getSupervisingFaculty(req: Request, res: Response, next: N
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch faculty"));
   }
 }
+
+export async function getUserById(req: Request, res: Response, next: NextFunction) {
+  const { id } = req.params;
+
+  try {
+    const query = `
+      SELECT 
+        u.user_id AS "userId", 
+        u.user_name AS "userName", 
+        u.user_email AS "userEmail", 
+        u.user_contact_no AS "userContactNo", 
+        u.dept_abbreviation AS "deptAbbreviation", 
+        u.role, 
+        u.is_active AS "isActive",
+        a.admin_lvl AS "adminLvl",
+        f.designation, 
+        f.area_of_research AS "areaOfResearch",
+        s.job_title AS "jobTitle"
+      FROM users u
+      LEFT JOIN admin a ON u.user_id = a.user_id
+      LEFT JOIN faculty f ON u.user_id = f.user_id
+      LEFT JOIN staff s ON u.user_id = s.user_id
+      WHERE u.user_id = $1;
+    `;
+
+    const result = await pool.query(query, [id]);
+
+    if (result.rowCount === 0) {
+      return next(new ApiError(404, "Not Found", "User not found"));
+    }
+
+    const raw = result.rows[0];
+
+    // here i am buildingg response object based on their actual role
+    // NOTE: i know donot use any but donot have enogh time now
+    const userData: any = {
+      userId: raw.userId,
+      userName: raw.userName,
+      userEmail: raw.userEmail,
+      userContactNo: raw.userContactNo,
+      deptAbbreviation: raw.deptAbbreviation,
+      role: raw.role,
+      isActive: raw.isActive
+    };
+
+    if (raw.role === "admin") {
+      userData.adminLvl = raw.adminLvl;
+    } else if (raw.role === "faculty") {
+      userData.designation = raw.designation;
+      userData.areaOfResearch = raw.areaOfResearch;
+    } else if (raw.role === "staff") {
+      userData.jobTitle = raw.jobTitle;
+    }
+
+    return res.status(200).json(new ApiResponse(200, userData, "User fetched successfully"));
+  } catch (error) {
+    console.error("Error fetching user by ID:", error);
+    return next(new ApiError(500, "Internal Server Error", "Failed to fetch user"));
+  }
+}
+
+export async function updateUser(req: Request, res: Response, next: NextFunction) {
+  const { id } = req.params;
+  const updates = req.body;
+
+  if (!updates || Object.keys(updates).length === 0) {
+    return next(new ApiError(422, "Unprocessable Entity", "Body is missing or empty"));
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const roleRes = await client.query(`SELECT role FROM users WHERE user_id = $1`, [id]);
+    if (roleRes.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return next(new ApiError(404, "Not Found", "User not found"));
+    }
+    const role = roleRes.rows[0].role;
+
+    const baseFields = [
+      "userName",
+      "userEmail",
+      "userContactNo",
+      "deptAbbreviation",
+      "isActive",
+      "password"
+    ];
+    const baseUpdates: any = {};
+
+    for (const key of baseFields) {
+      if (updates[key] !== undefined) baseUpdates[key] = updates[key];
+    }
+
+    if (baseUpdates.password) {
+      baseUpdates.password = await bcrypt.hash(baseUpdates.password, SALT_ROUNDS);
+    }
+
+    if (Object.keys(baseUpdates).length > 0) {
+      const setCols = [];
+      const values = [];
+      let i = 1;
+
+      for (const [k, v] of Object.entries(baseUpdates)) {
+        // Convert camelCase keys to snake_case for the DB
+        const colName = k.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+        setCols.push(`${colName} = $${i}`);
+        values.push(v);
+        i++;
+      }
+      values.push(id); // pushing id to used it in whre clause
+
+      const updateUsersQuery = `UPDATE users SET ${setCols.join(", ")} WHERE user_id = $${i}`;
+      await client.query(updateUsersQuery, values);
+    }
+
+    // now updating the specific role table
+    if (role === "admin" && updates.adminLvl !== undefined) {
+      await client.query(`UPDATE admin SET admin_lvl = $1 WHERE user_id = $2`, [
+        updates.adminLvl,
+        id
+      ]);
+    } else if (role === "faculty") {
+      const facUpdates = [];
+      const facVals = [];
+      let i = 1;
+
+      if (updates.designation !== undefined) {
+        facUpdates.push(`designation = $${i++}`);
+        facVals.push(updates.designation);
+      }
+      if (updates.areaOfResearch !== undefined) {
+        facUpdates.push(`area_of_research = $${i++}`);
+        facVals.push(updates.areaOfResearch);
+      }
+
+      if (facUpdates.length > 0) {
+        facVals.push(id);
+        await client.query(
+          `UPDATE faculty SET ${facUpdates.join(", ")} WHERE user_id = $${i}`,
+          facVals
+        );
+      }
+    } else if (role === "staff" && updates.jobTitle !== undefined) {
+      await client.query(`UPDATE staff SET job_title = $1 WHERE user_id = $2`, [
+        updates.jobTitle,
+        id
+      ]);
+    }
+
+    await client.query("COMMIT");
+
+    return res.status(200).json(new ApiResponse(200, null, "User updated successfully"));
+  } catch (err: unknown) {
+    await client.query("ROLLBACK");
+
+    const error = err as DatabaseError;
+    if (error.code === DbErrorCodes.UNIQUE_VIOLATION) {
+      return next(new ApiError(409, "Conflict", "User Email already exists"));
+    }
+    if (error.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) {
+      return next(
+        new ApiError(409, "Conflict", "The specified department abbreviation does not exist")
+      );
+    }
+
+    console.error("Update Transaction Error:", error);
+    return next(new ApiError(500, "Internal Server Error", "Failed to update user"));
+  } finally {
+    client.release();
+  }
+}
+
+export async function deleteUser(req: Request, res: Response, next: NextFunction) {
+  const { id } = req.params;
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const roleRes = await client.query(`SELECT role FROM users WHERE user_id = $1`, [id]);
+    if (roleRes.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return next(new ApiError(404, "Not Found", "User not found"));
+    }
+
+    const role = roleRes.rows[0].role;
+
+    if (role === "admin") {
+      await client.query(`DELETE FROM admin WHERE user_id = $1`, [id]);
+    } else if (role === "faculty") {
+      await client.query(`DELETE FROM faculty WHERE user_id = $1`, [id]);
+    } else if (role === "staff") {
+      await client.query(`DELETE FROM staff WHERE user_id = $1`, [id]);
+    }
+
+    await client.query(`DELETE FROM users WHERE user_id = $1`, [id]);
+
+    await client.query("COMMIT");
+
+    return res.status(200).json(new ApiResponse(200, null, "User deleted successfully"));
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Delete Transaction Error:", error);
+    return next(new ApiError(500, "Internal Server Error", "Failed to delete user"));
+  } finally {
+    client.release();
+  }
+}
+
+export async function softDeleteUser(req: Request, res: Response, next: NextFunction) {
+  const { id } = req.params;
+
+  try {
+    const query = `
+      UPDATE users 
+      SET is_active = false 
+      WHERE user_id = $1 
+      RETURNING user_id
+    `;
+
+    const result = await pool.query(query, [id]);
+
+    if (result.rowCount === 0) {
+      return next(new ApiError(404, "Not Found", "User not found"));
+    }
+
+    return res.status(200).json(new ApiResponse(200, null, "User successfully deactivated"));
+  } catch (error) {
+    console.error("Soft Delete Error:", error);
+    return next(new ApiError(500, "Internal Server Error", "Failed to deactivate user"));
+  }
+}

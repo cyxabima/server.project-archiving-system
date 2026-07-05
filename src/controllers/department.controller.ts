@@ -173,3 +173,39 @@ export async function getDepartments(req: Request, res: Response, next: NextFunc
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch departments"));
   }
 }
+
+export async function deleteDepartment(req: Request, res: Response, next: NextFunction) {
+  const { deptAbbreviation } = req.params;
+
+  try {
+    const query = `
+      DELETE FROM department 
+      WHERE dept_abbreviation = $1 
+      RETURNING dept_abbreviation AS "deptAbbreviation";
+    `;
+
+    const result = await pool.query(query, [deptAbbreviation]);
+
+    if (result.rowCount === 0) {
+      return next(new ApiError(404, "Not Found", "Department not found"));
+    }
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, null, "Department deleted successfully"));
+
+  } catch (err: any) {
+    if (err.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) {
+      return next(
+        new ApiError(
+          409,
+          "Conflict",
+          "Cannot delete department because it is currently linked to faculty, students, or other active records."
+        )
+      );
+    }
+
+    console.error("Delete Department Error:", err);
+    return next(new ApiError(500, "Database Error", "Failed to delete department"));
+  }
+}

@@ -264,3 +264,29 @@ export async function getGroups(req: Request, res: Response, next: NextFunction)
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch groups"));
   }
 }
+
+export async function deleteGroup(req: Request, res: Response, next: NextFunction) {
+  const { groupId } = req.params;
+
+  try {
+    const query = `
+      DELETE FROM groups 
+      WHERE group_id = $1 
+      RETURNING group_id;
+    `;
+
+    const result = await pool.query(query, [groupId]);
+
+    if (result.rowCount === 0) {
+      return next(new ApiError(404, "Not Found", "Group not found"));
+    }
+
+    return res.status(200).json(new ApiResponse(200, null, "Group deleted successfully"));
+  } catch (err: any) {
+    if (err.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) {
+      return next(new ApiError(409, "Conflict", "Cannot delete group because it is currently assigned to a project or evaluation."));
+    }
+    console.error("Delete Group Error:", err);
+    return next(new ApiError(500, "Database Error", "Failed to delete group"));
+  }
+}

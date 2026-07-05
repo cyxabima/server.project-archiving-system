@@ -131,29 +131,36 @@ export async function getExternals(req: Request, res: Response, next: NextFuncti
     // Search Parameter (case-insensitive partial match)
     if (req.query.search) {
       const searchTerm = `%${req.query.search}%`;
-      conditionQuery += ` AND (ext_name ILIKE $${paramCounter} OR ext_email ILIKE $${paramCounter} OR ext_designation ILIKE $${paramCounter})`;
+      conditionQuery += ` AND (e.ext_name ILIKE $${paramCounter} OR e.ext_email ILIKE $${paramCounter} OR e.ext_designation ILIKE $${paramCounter})`;
       queryParams.push(searchTerm);
       paramCounter++;
     }
 
     // Filter = Industry ID
     if (req.query.industryId) {
-      conditionQuery += ` AND industry_id = $${paramCounter}`;
+      conditionQuery += ` AND e.industry_id = $${paramCounter}`;
       queryParams.push(req.query.industryId);
       paramCounter++;
     }
 
     const dataQuery = `
-      SELECT ext_email, ext_name, ext_designation, industry_id
-      FROM external_superv
+      SELECT 
+        e.ext_email AS "extEmail", 
+        e.ext_name AS "extName", 
+        e.ext_designation AS "extDesignation", 
+        e.industry_id AS "industryId",
+        i.industry_name AS "industryName"
+      FROM external_superv e
+      LEFT JOIN industry i ON e.industry_id = i.industry_id
       ${conditionQuery}
-      ORDER BY ext_name ASC
+      ORDER BY e.ext_name ASC
       LIMIT $${paramCounter} OFFSET $${paramCounter + 1};
     `;
 
     const countQuery = `
       SELECT COUNT(*) 
-      FROM external_superv
+      FROM external_superv e
+      LEFT JOIN industry i ON e.industry_id = i.industry_id
       ${conditionQuery};
     `;
 
@@ -185,5 +192,41 @@ export async function getExternals(req: Request, res: Response, next: NextFuncti
   } catch (error) {
     console.error("Error fetching external supervisors:", error);
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch external supervisors"));
+  }
+}
+
+export async function deleteExternal(req: Request, res: Response, next: NextFunction) {
+  const { extEmail } = req.params;
+
+  try {
+    const query = `
+      DELETE FROM external_superv 
+      WHERE ext_email = $1 
+      RETURNING ext_email AS "extEmail";
+    `;
+
+    const result = await pool.query(query, [extEmail]);
+
+    if (result.rowCount === 0) {
+      return next(new ApiError(404, "Not Found", "External supervisor not found"));
+    }
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, null, "External supervisor deleted successfully"));
+
+  } catch (err: any) {
+    if (err.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) {
+      return next(
+        new ApiError(
+          409,
+          "Conflict",
+          "Cannot delete external supervisor because they are currently assigned to active projects or evaluations."
+        )
+      );
+    }
+
+    console.error("Delete External Supervisor Error:", err);
+    return next(new ApiError(500, "Database Error", "Failed to delete external supervisor"));
   }
 }
