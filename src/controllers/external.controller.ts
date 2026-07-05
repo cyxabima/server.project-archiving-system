@@ -107,9 +107,43 @@ export async function updateExternal(req: Request, res: Response, next: NextFunc
   }
 }
 
+// GET /api/v1/externals
 export async function getExternals(req: Request, res: Response, next: NextFunction) {
+  // Default pagination values
+  let limit = 20;
+  let offset = 0;
+
+  if (req.query.limit) {
+    limit = parseInt(req.query.limit as string, 10);
+    if (isNaN(limit)) limit = 20;
+  }
+
+  if (req.query.offset) {
+    offset = parseInt(req.query.offset as string, 10);
+    if (isNaN(offset)) offset = 0;
+  }
+
   try {
-    let queryText = `
+    let conditionQuery = `WHERE 1=1`;
+    const queryParams: any[] = [];
+    let paramCounter = 1;
+
+    // Search Parameter (case-insensitive partial match)
+    if (req.query.search) {
+      const searchTerm = `%${req.query.search}%`;
+      conditionQuery += ` AND (e.ext_name ILIKE $${paramCounter} OR e.ext_email ILIKE $${paramCounter} OR e.ext_designation ILIKE $${paramCounter})`;
+      queryParams.push(searchTerm);
+      paramCounter++;
+    }
+
+    // Filter = Industry ID
+    if (req.query.industryId) {
+      conditionQuery += ` AND e.industry_id = $${paramCounter}`;
+      queryParams.push(req.query.industryId);
+      paramCounter++;
+    }
+
+    const dataQuery = `
       SELECT 
         e.ext_email AS "extEmail", 
         e.ext_name AS "extName", 
@@ -118,32 +152,48 @@ export async function getExternals(req: Request, res: Response, next: NextFuncti
         i.industry_name AS "industryName"
       FROM external_superv e
       LEFT JOIN industry i ON e.industry_id = i.industry_id
-      WHERE 1=1
+      ${conditionQuery}
+      ORDER BY e.ext_name ASC
+      LIMIT $${paramCounter} OFFSET $${paramCounter + 1};
     `;
 
-    const queryParams: any[] = [];
-    let paramCounter = 1;
+    const countQuery = `
+      SELECT COUNT(*) 
+      FROM external_superv e
+      LEFT JOIN industry i ON e.industry_id = i.industry_id
+      ${conditionQuery};
+    `;
 
-    // Filter = Industry ID
-    if (req.query.industryId) {
-      queryText += ` AND industry_id = $${paramCounter}`;
-      queryParams.push(req.query.industryId);
-      paramCounter++;
-    }
+    const dataParams = [...queryParams, limit, offset];
 
-    queryText += ` ORDER BY ext_name ASC;`;
+    // Execute both queries concurrently
+    const [dataResult, countResult] = await Promise.all([
+      pool.query(dataQuery, dataParams),
+      pool.query(countQuery, queryParams)
+    ]);
 
-    const result = await pool.query(queryText, queryParams);
+    // Calculate pagination metadata
+    const totalRecords = parseInt(countResult.rows[0].count, 10);
+    const totalPages = Math.ceil(totalRecords / limit);
+    const currentPage = Math.floor(offset / limit) + 1;
+
+    const responsePayload = {
+      data: dataResult.rows,
+      meta: {
+        currentPage,
+        totalPages,
+        totalRecords
+      }
+    };
 
     return res
       .status(200)
-      .json(new ApiResponse(200, result.rows, "External supervisors fetched successfully"));
+      .json(new ApiResponse(200, responsePayload, "External supervisors fetched successfully"));
   } catch (error) {
     console.error("Error fetching external supervisors:", error);
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch external supervisors"));
   }
 }
-
 
 export async function deleteExternal(req: Request, res: Response, next: NextFunction) {
   const { extEmail } = req.params;

@@ -236,43 +236,95 @@ export async function addStaff(req: Request, res: Response, next: NextFunction) 
   }
 }
 
+// GET /api/v1/users
 export async function getUsers(req: Request, res: Response, next: NextFunction) {
-  try {
-    let queryText = `
-      SELECT user_id, user_name, user_email, user_contact_no, dept_abbreviation, role, is_active
-      FROM users
-      WHERE 1=1
-    `;
+  // Default pagination values
+  let limit = 20;
+  let offset = 0;
 
+  if (req.query.limit) {
+    limit = parseInt(req.query.limit as string, 10);
+    if (isNaN(limit)) limit = 20;
+  }
+
+  if (req.query.offset) {
+    offset = parseInt(req.query.offset as string, 10);
+    if (isNaN(offset)) offset = 0;
+  }
+
+  try {
+    let conditionQuery = `WHERE 1=1`;
     const queryParams: any[] = [];
     let paramCounter = 1;
 
+    // Search Parameter (case-insensitive partial match)
+    if (req.query.search) {
+      const searchTerm = `%${req.query.search}%`;
+      conditionQuery += ` AND (user_name ILIKE $${paramCounter} OR user_email ILIKE $${paramCounter} OR user_contact_no ILIKE $${paramCounter})`;
+      queryParams.push(searchTerm);
+      paramCounter++;
+    }
+
     // Filter = Department Abbreviation
     if (req.query.deptAbbreviation) {
-      queryText += ` AND dept_abbreviation = $${paramCounter}`;
+      conditionQuery += ` AND dept_abbreviation = $${paramCounter}`;
       queryParams.push(req.query.deptAbbreviation);
       paramCounter++;
     }
 
     // Filter = Role
     if (req.query.role) {
-      queryText += ` AND role = $${paramCounter}`;
+      conditionQuery += ` AND role = $${paramCounter}`;
       queryParams.push(req.query.role);
       paramCounter++;
     }
 
     // Filter = Active Status
     if (req.query.isActive !== undefined) {
-      queryText += ` AND is_active = $${paramCounter}`;
+      conditionQuery += ` AND is_active = $${paramCounter}`;
       queryParams.push(req.query.isActive === "true");
       paramCounter++;
     }
 
-    queryText += ` ORDER BY user_name ASC;`;
+    const dataQuery = `
+      SELECT user_id, user_name, user_email, user_contact_no, dept_abbreviation, role, is_active
+      FROM users
+      ${conditionQuery}
+      ORDER BY user_name ASC
+      LIMIT $${paramCounter} OFFSET $${paramCounter + 1};
+    `;
 
-    const result = await pool.query(queryText, queryParams);
+    const countQuery = `
+      SELECT COUNT(*) 
+      FROM users
+      ${conditionQuery};
+    `;
 
-    return res.status(200).json(new ApiResponse(200, result.rows, "Users fetched successfully"));
+    const dataParams = [...queryParams, limit, offset];
+
+    // Execute both queries concurrently
+    const [dataResult, countResult] = await Promise.all([
+      pool.query(dataQuery, dataParams),
+      pool.query(countQuery, queryParams)
+    ]);
+
+    // Calculate pagination metadata
+    const totalRecords = parseInt(countResult.rows[0].count, 10);
+    const totalPages = Math.ceil(totalRecords / limit);
+    const currentPage = Math.floor(offset / limit) + 1;
+
+    const responsePayload = {
+      data: dataResult.rows,
+      meta: {
+        currentPage,
+        totalPages,
+        totalRecords
+      }
+    };
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, responsePayload, "Users fetched successfully"));
   } catch (error) {
     console.error("Error fetching users:", error);
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch users"));
