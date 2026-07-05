@@ -172,36 +172,93 @@ export async function updateGroup(req: Request, res: Response, next: NextFunctio
   }
 }
 
+// GET /api/v1/groups
 export async function getGroups(req: Request, res: Response, next: NextFunction) {
-  try {
-    let queryText = `
-      SELECT group_id, group_leader, member_2, member_3, member_4, project_id
-      FROM groups
-      WHERE 1=1
-    `;
+  // Default pagination values
+  let limit = 20;
+  let offset = 0;
 
+  if (req.query.limit) {
+    limit = parseInt(req.query.limit as string, 10);
+    if (isNaN(limit)) limit = 20;
+  }
+
+  if (req.query.offset) {
+    offset = parseInt(req.query.offset as string, 10);
+    if (isNaN(offset)) offset = 0;
+  }
+
+  try {
+    let conditionQuery = `WHERE 1=1`;
     const queryParams: any[] = [];
     let paramCounter = 1;
 
+    // Search Parameter (case-insensitive partial match across group ID and all members)
+    if (req.query.search) {
+      const searchTerm = `%${req.query.search}%`;
+      conditionQuery += ` AND (
+        group_id::text ILIKE $${paramCounter} OR 
+        group_leader ILIKE $${paramCounter} OR 
+        member_2 ILIKE $${paramCounter} OR 
+        member_3 ILIKE $${paramCounter} OR 
+        member_4 ILIKE $${paramCounter}
+      )`;
+      queryParams.push(searchTerm);
+      paramCounter++;
+    }
+
     // Filter = Project ID
     if (req.query.projectId) {
-      queryText += ` AND project_id = $${paramCounter}`;
+      conditionQuery += ` AND project_id = $${paramCounter}`;
       queryParams.push(req.query.projectId);
       paramCounter++;
     }
 
     // Filter = Student SeatNo. (in any member slot)
     if (req.query.seatNo) {
-      queryText += ` AND (group_leader = $${paramCounter} OR member_2 = $${paramCounter} OR member_3 = $${paramCounter} OR member_4 = $${paramCounter})`;
+      conditionQuery += ` AND (group_leader = $${paramCounter} OR member_2 = $${paramCounter} OR member_3 = $${paramCounter} OR member_4 = $${paramCounter})`;
       queryParams.push(req.query.seatNo);
       paramCounter++;
     }
 
-    queryText += ` ORDER BY group_id ASC;`;
+    const dataQuery = `
+      SELECT group_id, group_leader, member_2, member_3, member_4, project_id
+      FROM groups
+      ${conditionQuery}
+      ORDER BY group_id ASC
+      LIMIT $${paramCounter} OFFSET $${paramCounter + 1};
+    `;
 
-    const result = await pool.query(queryText, queryParams);
+    const countQuery = `
+      SELECT COUNT(*) 
+      FROM groups
+      ${conditionQuery};
+    `;
 
-    return res.status(200).json(new ApiResponse(200, result.rows, "Groups fetched successfully"));
+    const dataParams = [...queryParams, limit, offset];
+
+    const [dataResult, countResult] = await Promise.all([
+      pool.query(dataQuery, dataParams),
+      pool.query(countQuery, queryParams)
+    ]);
+
+    // Calculate pagination metadata
+    const totalRecords = parseInt(countResult.rows[0].count, 10);
+    const totalPages = Math.ceil(totalRecords / limit);
+    const currentPage = Math.floor(offset / limit) + 1;
+
+    const responsePayload = {
+      data: dataResult.rows,
+      meta: {
+        currentPage,
+        totalPages,
+        totalRecords
+      }
+    };
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, responsePayload, "Groups fetched successfully"));
   } catch (error) {
     console.error("Error fetching groups:", error);
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch groups"));
