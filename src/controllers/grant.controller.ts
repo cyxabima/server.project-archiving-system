@@ -141,8 +141,48 @@ export async function updateGrant(req: Request, res: Response, next: NextFunctio
 
 // GET /api/v1/grants
 export async function getGrants(req: Request, res: Response, next: NextFunction) {
+  // Default pagination values
+  let limit = 20;
+  let offset = 0;
+
+  if (req.query.limit) {
+    limit = parseInt(req.query.limit as string, 10);
+    if (isNaN(limit)) limit = 20;
+  }
+
+  if (req.query.offset) {
+    offset = parseInt(req.query.offset as string, 10);
+    if (isNaN(offset)) offset = 0;
+  }
+
   try {
-    let queryText = `
+    let conditionQuery = `WHERE 1=1`;
+    const queryParams: any[] = [];
+    let paramCounter = 1;
+
+    // Search Parameter (case-insensitive partial match)
+    if (req.query.search) {
+      const searchTerm = `%${req.query.search}%`;
+      conditionQuery += ` AND (g.grant_name ILIKE $${paramCounter} OR i.industry_name ILIKE $${paramCounter})`;
+      queryParams.push(searchTerm);
+      paramCounter++;
+    }
+
+    // Filter = Project ID
+    if (req.query.projectId) {
+      conditionQuery += ` AND g.project_id = $${paramCounter}`;
+      queryParams.push(req.query.projectId);
+      paramCounter++;
+    }
+
+    // Filter = Industry ID
+    if (req.query.industryId) {
+      conditionQuery += ` AND g.industry_id = $${paramCounter}`;
+      queryParams.push(req.query.industryId);
+      paramCounter++;
+    }
+
+    const dataQuery = `
       SELECT 
           g.project_id AS "projectId",
           g.grant_name AS "grantName", 
@@ -151,31 +191,43 @@ export async function getGrants(req: Request, res: Response, next: NextFunction)
           i.industry_name AS "industryName"
       FROM grants g
       LEFT JOIN industry i ON g.industry_id = i.industry_id
-      WHERE 1=1
+      ${conditionQuery}
+      ORDER BY g.recieved_date DESC, g.grant_name ASC
+      LIMIT $${paramCounter} OFFSET $${paramCounter + 1};
     `;
 
-    const queryParams: any[] = [];
-    let paramCounter = 1;
+    const countQuery = `
+      SELECT COUNT(*) 
+      FROM grants g
+      LEFT JOIN industry i ON g.industry_id = i.industry_id
+      ${conditionQuery};
+    `;
 
-    // Filter = Project ID
-    if (req.query.projectId) {
-      queryText += ` AND g.project_id = $${paramCounter}`;
-      queryParams.push(req.query.projectId);
-      paramCounter++;
-    }
+    const dataParams = [...queryParams, limit, offset];
 
-    // Filter = Industry ID
-    if (req.query.industryId) {
-      queryText += ` AND g.industry_id = $${paramCounter}`;
-      queryParams.push(req.query.industryId);
-      paramCounter++;
-    }
+    // Execute both queries concurrently
+    const [dataResult, countResult] = await Promise.all([
+      pool.query(dataQuery, dataParams),
+      pool.query(countQuery, queryParams)
+    ]);
 
-    queryText += ` ORDER BY g.recieved_date DESC, g.grant_name ASC;`;
+    // Calculate pagination metadata
+    const totalRecords = parseInt(countResult.rows[0].count, 10);
+    const totalPages = Math.ceil(totalRecords / limit);
+    const currentPage = Math.floor(offset / limit) + 1;
 
-    const result = await pool.query(queryText, queryParams);
+    const responsePayload = {
+      data: dataResult.rows,
+      meta: {
+        currentPage,
+        totalPages,
+        totalRecords
+      }
+    };
 
-    return res.status(200).json(new ApiResponse(200, result.rows, "Grants fetched successfully"));
+    return res
+      .status(200)
+      .json(new ApiResponse(200, responsePayload, "Grants fetched successfully"));
   } catch (error) {
     console.error("Error fetching grants:", error);
     return next(new ApiError(500, "Internal Server Error", "Failed to fetch grants"));
