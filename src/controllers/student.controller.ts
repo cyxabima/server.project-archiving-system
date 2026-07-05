@@ -108,13 +108,17 @@ export async function updateStudent(req: Request, res: Response, next: NextFunct
 
 // GET /api/v1/students
 export async function getStudents(req: Request, res: Response, next: NextFunction) {
-  let limit = 50;
+  // Default pagination values
+  let limit = 20;
   let offset = 0;
 
-  if (req.query.limit && req.query.offset) {
+  if (req.query.limit) {
     limit = parseInt(req.query.limit as string, 10);
+    if (isNaN(limit)) limit = 20;
+  }
+
+  if (req.query.offset) {
     offset = parseInt(req.query.offset as string, 10);
-    if (isNaN(limit)) limit = 10;
     if (isNaN(offset)) offset = 0;
   }
 
@@ -122,6 +126,14 @@ export async function getStudents(req: Request, res: Response, next: NextFunctio
     let conditionQuery = `WHERE 1=1`;
     const queryParams: any[] = [];
     let paramCounter = 1;
+
+    // Search Parameter (case-insensitive partial match)
+    if (req.query.search) {
+      const searchTerm = `%${req.query.search}%`;
+      conditionQuery += ` AND (std_name ILIKE $${paramCounter} OR seat_no ILIKE $${paramCounter} OR std_email ILIKE $${paramCounter})`;
+      queryParams.push(searchTerm);
+      paramCounter++;
+    }
 
     // Filter = Batch Year
     if (req.query.batch) {
