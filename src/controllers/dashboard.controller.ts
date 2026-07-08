@@ -21,7 +21,7 @@ export async function getDashboardStats(req: Request, res: Response, next: NextF
         (SELECT COUNT(*) FROM users) AS "totalUsers",
         (SELECT COUNT(*) FROM groups) AS "totalGroups",
         (SELECT COUNT(*) FROM grants) AS "totalGrants",
-        (SELECT COUNT(*) FROM audiit_logs) AS "totalLogs",
+        (SELECT COUNT(*) FROM audit_logs) AS "totalLogs",
         (SELECT COUNT(*) FROM students) AS "totalStudent";
     `;
 
