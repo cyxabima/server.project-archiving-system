@@ -22,7 +22,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@supabase/supabase-js": "^2.105.4",
+    "@supabase/storage-js": "^2.110.0",
+    "@supabase/supabase-js": "^2.110.0",
     "bcryptjs": "^3.0.3",
     "config": "^4.4.1",
     "cookie-parser": "^1.4.7",
