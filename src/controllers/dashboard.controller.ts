@@ -9,7 +9,7 @@ export async function getDashboardStats(req: Request, res: Response, next: NextF
     const { projectDeptAbbrev, studentDeptAbbrev, studentBatch } = req.query;
 
     const masterQuery = `
-      SELECT 
+      SELECT
         (SELECT COUNT(*) FROM faculty) AS "totalFaculty",
         (SELECT COUNT(DISTINCT faculty_id) FROM project_faculty) AS "totalSupervisingFaculty",
         (SELECT COUNT(*) FROM external_superv) AS "totalExternals",
@@ -19,6 +19,9 @@ export async function getDashboardStats(req: Request, res: Response, next: NextF
         (SELECT COUNT(*) FROM projects) AS "totalProject",
         (SELECT COUNT(*) FROM staff) AS "totalStaff",
         (SELECT COUNT(*) FROM users) AS "totalUsers",
+        (SELECT COUNT(*) FROM groups) AS "totalGroups",
+        (SELECT COUNT(*) FROM grants) AS "totalGrants",
+        (SELECT COUNT(*) FROM audiit_logs) AS "totalLogs",
         (SELECT COUNT(*) FROM students) AS "totalStudent";
     `;
 
@@ -36,6 +39,9 @@ export async function getDashboardStats(req: Request, res: Response, next: NextF
       totalStaff: parseInt(rawCounts.totalStaff, 10),
       totalUsers: parseInt(rawCounts.totalUsers, 10),
       totalStudent: parseInt(rawCounts.totalStudent, 10),
+      totalGroups: parseInt(rawCounts.totalGroups, 10),
+      totalGrants: parseInt(rawCounts.totalGrants, 10),
+      totalLogs: parseInt(rawCounts.totalLogs, 10),
       projectsByDept: null, // Defaults
       studentsByFilter: null
     };

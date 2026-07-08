@@ -73,8 +73,8 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
     // Filter: Industry Name
     if (req.query.industryName && typeof req.query.industryName === "string") {
       conditionQuery += ` AND EXISTS (
-        SELECT 1 FROM project_industry pi_name 
-        JOIN industry i_name ON pi_name.industry_id = i_name.industry_id 
+        SELECT 1 FROM project_industry pi_name
+        JOIN industry i_name ON pi_name.industry_id = i_name.industry_id
         WHERE pi_name.project_id = p.project_id AND i_name.industry_name ILIKE $${paramCounter}
       )`;
       queryParams.push(`%${req.query.industryName}%`);
@@ -101,19 +101,19 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
     // Filter: Global Search
     if (req.query.search && typeof req.query.search === "string") {
       conditionQuery += ` AND (
-        p.project_title ILIKE $${paramCounter} OR 
+        p.project_title ILIKE $${paramCounter} OR
         p.abstract ILIKE $${paramCounter} OR
-        p.academic_year ILIKE $${paramCounter} OR 
+        p.academic_year ILIKE $${paramCounter} OR
         d.dept_name ILIKE $${paramCounter} OR
         d_main.domain_name ILIKE $${paramCounter} OR
         EXISTS (
-            SELECT 1 FROM project_faculty pf_search 
-            JOIN users u_search ON pf_search.faculty_id = u_search.user_id 
+            SELECT 1 FROM project_faculty pf_search
+            JOIN users u_search ON pf_search.faculty_id = u_search.user_id
             WHERE pf_search.project_id = p.project_id AND u_search.user_name ILIKE $${paramCounter}
         ) OR
         EXISTS (
-            SELECT 1 FROM project_industry pi_search 
-            JOIN industry i_search ON pi_search.industry_id = i_search.industry_id 
+            SELECT 1 FROM project_industry pi_search
+            JOIN industry i_search ON pi_search.industry_id = i_search.industry_id
             WHERE pi_search.project_id = p.project_id AND i_search.industry_name ILIKE $${paramCounter}
         )
       )`;
@@ -135,22 +135,22 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
 
     const dataQuery = `
         ${cteQuery}
-        SELECT 
+        SELECT
             p.project_id AS "id",
             p.project_title AS "title",
             p.abstract AS "abstract",
             p.academic_year AS "batch",
-            
+
             -- Fetch the primary department string (LIMIT 1 handles multi-domain crossover)
             (
-                SELECT d_sub.dept_name 
+                SELECT d_sub.dept_name
                 FROM project_domain pd_sub
                 JOIN domains dom_sub ON pd_sub.domain_id = dom_sub.domain_id
                 JOIN department d_sub ON dom_sub.dept_abbreviation = d_sub.dept_abbreviation
                 WHERE pd_sub.project_id = p.project_id
                 LIMIT 1
             ) AS "department",
-            
+
             -- Simplified Domain JSON Aggregation (No more UNION!)
             (
                 SELECT COALESCE(json_agg(dom.domain_name), '[]'::json)
@@ -237,23 +237,23 @@ export async function listProjects(req: Request, res: Response, next: NextFuncti
   }
 
   try {
-    const dataQuery = ` 
-        SELECT 
+    const dataQuery = `
+        SELECT
             p.project_id AS "id",
             p.project_title AS "title",
             p.abstract AS "abstract",
             p.academic_year AS "batch",
-            
+
             -- Fetch the primary department string (LIMIT 1 safely handles multi-domain crossover)
             (
-                SELECT d_sub.dept_name 
+                SELECT d_sub.dept_name
                 FROM project_domain pd_sub
                 JOIN domains dom_sub ON pd_sub.domain_id = dom_sub.domain_id
                 JOIN department d_sub ON dom_sub.dept_abbreviation = d_sub.dept_abbreviation
                 WHERE pd_sub.project_id = p.project_id
                 LIMIT 1
             ) AS "department",
-            
+
             -- DOMAINS (Simplified directly from the new many-to-many table)
             (
                 SELECT COALESCE(json_agg(dom.domain_name), '[]'::json)
@@ -394,7 +394,7 @@ export async function createProject(req: Request, res: Response, next: NextFunct
     const deptAbbr = deptRes.rows[0].dept_abbreviation;
 
     const projectRes = await client.query(
-      `INSERT INTO projects (project_title, abstract, academic_year, dept_abbreviation) 
+      `INSERT INTO projects (project_title, abstract, academic_year, dept_abbreviation)
        VALUES ($1, $2, $3, $4) RETURNING project_id;`,
       [projectTitle, abstract, academicYear, deptAbbr]
     );
@@ -418,7 +418,7 @@ export async function createProject(req: Request, res: Response, next: NextFunct
     // Faculty Supervisors
     for (const faculty of facultySupervisors) {
       await client.query(
-        `INSERT INTO project_faculty (project_id, faculty_id, supervisory_role, remark) 
+        `INSERT INTO project_faculty (project_id, faculty_id, supervisory_role, remark)
          VALUES ($1, $2, $3, $4);`,
         [projectId, faculty.userId, faculty.role, faculty.remark || null]
       );
