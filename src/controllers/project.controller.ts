@@ -339,9 +339,7 @@ export async function createProject(req: Request, res: Response, next: NextFunct
     abstract,
     academicYear,
     groupId,
-    industryName,
-    associationType,
-    extEmail,
+    grantIndustryName,
     grantName,
     grantAmount,
     recievedDate
@@ -349,13 +347,14 @@ export async function createProject(req: Request, res: Response, next: NextFunct
 
   let domainIds: string[] = [];
   let facultySupervisors: { userId: string; role: string; remark?: string }[] = [];
-
+  let industries: { industryName: string; associationType: string; extEmail: string }[] = [];
   try {
     domainIds = JSON.parse(req.body.domainIds);
     facultySupervisors = JSON.parse(req.body.facultySupervisors);
+    industries = JSON.parse(req.body.industries || "[]");
   } catch (e) {
     return next(
-      new ApiError(400, "Bad Request", "Invalid JSON format for domains or supervisors.")
+      new ApiError(400, "Bad Request", "Invalid JSON format for domains or supervisors or industries.")
     );
   }
 
@@ -425,43 +424,65 @@ export async function createProject(req: Request, res: Response, next: NextFunct
     }
 
     // Industry, External & Grants
-    let industryId = null;
+    const linkedIndustryIds = new Set(); // Track linked IDs to prevent duplicate inserts later
 
-    if (industryName) {
+    for (const ind of industries) {
+      if (!ind.industryName) continue;
+
+      // Find Industry ID
       const indRes = await client.query(
         `SELECT industry_id FROM industry WHERE industry_name = $1`,
-        [industryName]
+        [ind.industryName]
       );
-      if (indRes.rows.length === 0) throw new Error("INDUSTRY_NOT_FOUND");
-      industryId = indRes.rows[0].industry_id;
+      if (indRes.rows.length === 0) throw new Error(`INDUSTRY_NOT_FOUND:${ind.industryName}`);
+      const industryId = indRes.rows[0].industry_id;
 
+      // Link project to industry
       await client.query(
         `INSERT INTO project_industry (project_id, industry_id, association_type) VALUES ($1, $2, $3);`,
-        [projectId, industryId, associationType || "Partner"]
+        [projectId, industryId, ind.associationType || "Partner"]
       );
+      linkedIndustryIds.add(industryId);
 
-      // External Supervisor
-      if (extEmail) {
+      // Link External Supervisor if provided
+      if (ind.extEmail) {
         const extRes = await client.query(
           `SELECT ext_email FROM external_superv WHERE ext_email = $1`,
-          [extEmail]
+          [ind.extEmail]
         );
-        if (extRes.rows.length === 0) throw new Error("EXTERNAL_NOT_FOUND");
+        if (extRes.rows.length === 0) throw new Error(`EXTERNAL_NOT_FOUND:${ind.extEmail}`);
 
         await client.query(
           `INSERT INTO project_external (project_id, ext_email, industry_feedback) VALUES ($1, $2, NULL);`,
-          [projectId, extEmail]
+          [projectId, ind.extEmail]
+        );
+      }
+    }
+
+      // Grants
+      if (grantIndustryName && grantName) {
+      const grantIndRes = await client.query(
+        `SELECT industry_id FROM industry WHERE industry_name = $1`,
+        [grantIndustryName]
+      );
+      if (grantIndRes.rows.length === 0) throw new Error(`INDUSTRY_NOT_FOUND:${grantIndustryName}`);
+      const grantIndustryId = grantIndRes.rows[0].industry_id;
+
+      // Ensure the sponsoring industry is linked to the project as "Sponsored"
+      // If it wasn't already linked via the arrays above, insert it now.
+      if (!linkedIndustryIds.has(grantIndustryId)) {
+        await client.query(
+          `INSERT INTO project_industry (project_id, industry_id, association_type) VALUES ($1, $2, $3);`,
+          [projectId, grantIndustryId, "Sponsored"]
         );
       }
 
-      // Grants
-      if (grantName && recievedDate) {
-        await client.query(
-          `INSERT INTO grants (project_id, grant_name, recieved_date, grant_amount, industry_id) 
-           VALUES ($1, $2, $3, $4, $5);`,
-          [projectId, grantName, recievedDate, grantAmount || null, industryId]
-        );
-      }
+      // Insert Grant Record
+      await client.query(
+        `INSERT INTO grants (project_id, grant_name, recieved_date, grant_amount, industry_id)
+         VALUES ($1, $2, $3, $4, $5);`,
+        [projectId, grantName, recievedDate || null, grantAmount || null, grantIndustryId]
+      );
     }
 
     // STEP 6: Upload to Supabase Buckets
@@ -515,7 +536,8 @@ export async function createProject(req: Request, res: Response, next: NextFunct
       groupId,
       domains: domainIds,
       facultySupervisors,
-      industryDetails: industryName ? { industryName, associationType, extEmail, grantName } : null,
+      industriesLinked: industries.length,
+      grantDetails: grantName ? { grantName, grantIndustryName, grantAmount } : null,
       resources: uploadedResources
     };
 
@@ -532,22 +554,25 @@ export async function createProject(req: Request, res: Response, next: NextFunct
     await client.query("ROLLBACK");
     console.error("Project Creation Transaction Failed:", error);
 
-    if (error.message === "GROUP_NOT_FOUND")
+    if (error.message === "GROUP_NOT_FOUND") {
       return next(new ApiError(404, "Not Found", "Provided Group ID does not exist."));
-    if (error.message === "INDUSTRY_NOT_FOUND")
-      return next(new ApiError(404, "Not Found", `Industry '${industryName}' does not exist.`));
-    if (error.message === "EXTERNAL_NOT_FOUND")
+    }
+
+    // Updated to handle dynamically appended industry/external names
+    if (error.message.startsWith("INDUSTRY_NOT_FOUND")) {
+      const missingName = error.message.split(":")[1];
+      return next(new ApiError(404, "Not Found", `Industry '${missingName}' does not exist.`));
+    }
+    if (error.message.startsWith("EXTERNAL_NOT_FOUND")) {
+      const missingEmail = error.message.split(":")[1];
+      return next(new ApiError(404, "Not Found", `External supervisor '${missingEmail}' does not exist.`));
+    }
+
+    if (error.message === "SUPABASE_UPLOAD_FAILED") {
       return next(
-        new ApiError(404, "Not Found", `External supervisor '${extEmail}' does not exist.`)
+        new ApiError(502, "Bad Gateway", "Failed to upload files to cloud storage. Database changes rolled back.")
       );
-    if (error.message === "SUPABASE_UPLOAD_FAILED")
-      return next(
-        new ApiError(
-          502,
-          "Bad Gateway",
-          "Failed to upload files to cloud storage. Database changes rolled back."
-        )
-      );
+    }
 
     const dbError = error as DatabaseError;
     if (dbError.code === DbErrorCodes.UNIQUE_VIOLATION)
