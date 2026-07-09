@@ -380,6 +380,20 @@ export async function createProject(req: Request, res: Response, next: NextFunct
   try {
     await client.query("BEGIN");
 
+    const checkGroupRes = await client.query(
+      `SELECT project_id FROM groups WHERE group_id = $1`,
+      [groupId]
+    );
+
+    if (checkGroupRes.rows.length === 0) {
+      throw new Error("GROUP_NOT_FOUND");
+    }
+
+    // If project_id is strictly not null, the group is already taken
+    if (checkGroupRes.rows[0].project_id !== null) {
+      throw new Error("GROUP_ALREADY_ASSIGNED");
+    }
+
     // Create Project
     const primaryDomainId = domainIds[0];
     const deptRes = await client.query(
@@ -554,11 +568,12 @@ export async function createProject(req: Request, res: Response, next: NextFunct
     await client.query("ROLLBACK");
     console.error("Project Creation Transaction Failed:", error);
 
+    if (error.message === "GROUP_ALREADY_ASSIGNED") {
+      return next(new ApiError(409, "Conflict", "The selected group is already assigned to an existing project."));
+    }
     if (error.message === "GROUP_NOT_FOUND") {
       return next(new ApiError(404, "Not Found", "Provided Group ID does not exist."));
     }
-
-    // Updated to handle dynamically appended industry/external names
     if (error.message.startsWith("INDUSTRY_NOT_FOUND")) {
       const missingName = error.message.split(":")[1];
       return next(new ApiError(404, "Not Found", `Industry '${missingName}' does not exist.`));
@@ -567,7 +582,6 @@ export async function createProject(req: Request, res: Response, next: NextFunct
       const missingEmail = error.message.split(":")[1];
       return next(new ApiError(404, "Not Found", `External supervisor '${missingEmail}' does not exist.`));
     }
-
     if (error.message === "SUPABASE_UPLOAD_FAILED") {
       return next(
         new ApiError(502, "Bad Gateway", "Failed to upload files to cloud storage. Database changes rolled back.")
