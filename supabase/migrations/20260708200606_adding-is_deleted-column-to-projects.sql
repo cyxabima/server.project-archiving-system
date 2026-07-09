@@ -1,0 +1,2 @@
+ALTER TABLE projects
+ADD COLUMN is_deleted BOOLEAN DEFAULT false;
