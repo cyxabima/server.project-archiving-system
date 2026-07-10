@@ -846,3 +846,33 @@ export async function updateProject(req: Request, res: Response, next: NextFunct
     client.release();
   }
 }
+
+export async function archiveProject(req: Request, res: Response, next: NextFunction) {
+  const projectId = req.params.projectId;
+
+  if (!projectId) { return next(new ApiError(400, "Bad Request", "Project ID is required.")); }
+
+  try {
+    const result = await pool.query(
+      `UPDATE projects SET is_deleted = true WHERE project_id = $1 AND is_deleted = false RETURNING project_id, project_title`,
+      [projectId]
+    );
+
+    if (result.rowCount === 0) {
+      return next(new ApiError(404, "Not Found", "Project not found or already archived."));
+    }
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          result.rows[0],
+          `Project '${result.rows[0].project_title}' archived successfully.`
+        )
+      );
+  } catch (error) {
+    console.error("Error archiving project:", error);
+    return next(new ApiError(500, "Internal Server Error", "Failed to archive project."));
+  }
+}

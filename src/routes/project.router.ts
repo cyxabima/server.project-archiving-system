@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getProjects, listProjects, createProject, updateProject, getProjectById } from "../controllers/project.controller.js";
+import { getProjects, listProjects, createProject, updateProject, getProjectById, archiveProject } from "../controllers/project.controller.js";
 import { verifyToken } from "../middleware/auth.middleware.js";
 import multer from "multer";
 
@@ -11,14 +11,11 @@ const upload = multer({ storage: multer.memoryStorage() });
 router.get("/getProjects", getProjects);
 router.get("/pageProjects", verifyToken, listProjects);
 router.get("/:projectId", getProjectById);
-router.patch(
-  "/:projectId",
-  verifyToken, // Your auth middleware
+router.patch("/:projectId", verifyToken,
   upload.fields([{ name: "reportFile", maxCount: 1 }, { name: "resourceFile", maxCount: 1 }]),
   updateProject
 );
-// router.delete("/:projectId", verifyToken, deleteProject);
-
+router.patch("/:projectId/archive", verifyToken, archiveProject);
 router.post(
   "/create",
   upload.fields([
