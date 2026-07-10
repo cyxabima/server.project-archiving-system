@@ -123,11 +123,19 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
         conditionQuery += ` AND (
           ARRAY(
             SELECT domain_id FROM project_domain WHERE project_id = p.project_id
-          )::varchar[] @> $${paramCounter}::varchar[]
-        )`;
-        queryParams.push(domainIdsArray);
-        paramCounter++;
-      }
+            )::varchar[] @> $${paramCounter}::varchar[]
+            )`;
+            queryParams.push(domainIdsArray);
+            paramCounter++;
+          }
+        }
+
+    //  Archive Toggle Logic
+    if (req.query.isDeleted === 'true') {
+      conditionQuery += ` AND p.is_deleted = true`;
+    } else {
+      // Default behavior: only show active projects
+      conditionQuery += ` AND p.is_deleted = false`;
     }
 
     // Filter: Department Abbreviation
