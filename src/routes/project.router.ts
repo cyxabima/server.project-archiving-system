@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getProjects, listProjects, createProject, updateProject, getProjectById, archiveProject } from "../controllers/project.controller.js";
+import { getProjects, listProjects, createProject, updateProject, getProjectById, archiveProject, restoreProject } from "../controllers/project.controller.js";
 import { verifyToken } from "../middleware/auth.middleware.js";
 import multer from "multer";
 
@@ -16,6 +16,7 @@ router.patch("/:projectId", verifyToken,
   updateProject
 );
 router.patch("/:projectId/archive", verifyToken, archiveProject);
+router.patch("/:projectId/restore", verifyToken, restoreProject);
 router.post(
   "/create",
   upload.fields([
