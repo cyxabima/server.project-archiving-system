@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getProjects, listProjects, createProject } from "../controllers/project.controller.js";
+import { getProjects, listProjects, createProject, updateProject, getProjectById } from "../controllers/project.controller.js";
 import { verifyToken } from "../middleware/auth.middleware.js";
 import multer from "multer";
 
@@ -10,6 +10,14 @@ const upload = multer({ storage: multer.memoryStorage() });
 // filter is embedded within controller getProjects
 router.get("/getProjects", getProjects);
 router.get("/pageProjects", verifyToken, listProjects);
+router.get("/:projectId", getProjectById);
+router.patch(
+  "/:projectId",
+  verifyToken, // Your auth middleware
+  upload.fields([{ name: "reportFile", maxCount: 1 }, { name: "resourceFile", maxCount: 1 }]),
+  updateProject
+);
+// router.delete("/:projectId", verifyToken, deleteProject);
 
 router.post(
   "/create",
