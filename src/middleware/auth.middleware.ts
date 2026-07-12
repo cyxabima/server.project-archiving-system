@@ -12,14 +12,7 @@ export interface AuthRequest extends Request {
 }
 
 export const verifyToken = (req: AuthRequest, res: Response, next: NextFunction) => {
-  // const authHeader = req.headers.authorization;
-
-  // if (!authHeader || !authHeader.startsWith("Bearer ")) {
-  //   return next(new ApiError(401, "Unauthorized", "Access denied. No token provided."));
-  // }
-
   const token = req.cookies.token;
-
   if(!token){
     return next(new ApiError(401, "Unauthorized", "Access denied. No token provided."))
   }
