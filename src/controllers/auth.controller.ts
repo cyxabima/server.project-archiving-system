@@ -16,10 +16,10 @@ export async function login(req: Request, res: Response, next: NextFunction) {
 
   try {
     const query = `
-      SELECT 
+      SELECT
         u.user_id, u.user_name, u.password, u.is_active, u.dept_abbreviation,
         a.admin_lvl,
-        CASE 
+        CASE
           WHEN a.user_id IS NOT NULL THEN 'admin'
           WHEN f.user_id IS NOT NULL THEN 'faculty'
           WHEN s.user_id IS NOT NULL THEN 'staff'
@@ -58,13 +58,30 @@ export async function login(req: Request, res: Response, next: NextFunction) {
 
     const token = jwt.sign(tokenPayload, process.env.JWT_SECRET as string, { expiresIn: "30d" });
 
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    });
+
     delete user.password;
 
-    return res.status(200).json(new ApiResponse(200, { token, user }, "Login successful"));
+    return res.status(200).json(new ApiResponse(200, { user }, "Login successful"));
   } catch (error) {
     console.error("Login Error:", error);
     return next(new ApiError(500, "Internal Server Error", "Login failed"));
   } finally {
     client.release();
   }
+}
+
+export function logout(req: Request, res: Response) {
+  res.clearCookie("token", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+  });
+
+  return res.status(200).json(new ApiResponse(200, null, "Logged out successfully"));
 }
