@@ -5,6 +5,94 @@ import ApiResponse from "../utils/ApiResponse.js";
 import { DbErrorCodes, DatabaseError } from "../utils/DbError.js";
 import { supabase } from "../db/config/supabase.js";
 
+export async function getProjectById(req: Request, res: Response, next: NextFunction) {
+  const projectId = req.params.projectId;
+  const client = await pool.connect();
+
+  try {
+    // 1. Fetch Main Project Details & Group
+    const projectRes = await client.query(
+      `SELECT p.project_id, p.project_title, p.abstract, p.academic_year, p.dept_abbreviation, g.group_id
+       FROM projects p
+       LEFT JOIN groups g ON p.project_id = g.project_id
+       WHERE p.project_id = $1`,
+      [projectId]
+    );
+
+    if (projectRes.rows.length === 0) {
+      return next(new ApiError(404, "Not Found", "Project not found."));
+    }
+    const project = projectRes.rows[0];
+
+    // 2. Fetch Domains
+    const domainRes = await client.query(
+      `SELECT domain_id FROM project_domain WHERE project_id = $1`,
+      [projectId]
+    );
+
+    // 3. Fetch Faculty Supervisors
+    const facultyRes = await client.query(
+      `SELECT faculty_id, supervisory_role, remark
+       FROM project_faculty WHERE project_id = $1`,
+      [projectId]
+    );
+
+    // 4. Fetch Industries & Externals (Combined)
+    const industryRes = await client.query(
+      `SELECT i.industry_name, pi.association_type, pe.ext_email
+       FROM project_industry pi
+       JOIN industry i ON pi.industry_id = i.industry_id
+       LEFT JOIN project_external pe ON pi.project_id = pe.project_id
+       -- Note: If multiple externals exist, this join might need tuning based on your strict schema
+       WHERE pi.project_id = $1`,
+      [projectId]
+    );
+
+    // 5. Fetch Grant Details
+    const grantRes = await client.query(
+      `SELECT g.grant_name, g.grant_amount, g.recieved_date, i.industry_name
+       FROM grants g
+       JOIN industry i ON g.industry_id = i.industry_id
+       WHERE g.project_id = $1`,
+      [projectId]
+    );
+
+    // 6. Fetch Resources (Files)
+    const resourceRes = await client.query(
+      `SELECT resource_name, resource_path
+       FROM resources WHERE project_id = $1`,
+      [projectId]
+    );
+
+    // Filter out the grant sponsor from the main industries array to match your frontend logic
+    const grantSponsorName = grantRes.rows.length > 0 ? grantRes.rows[0].industry_name : null;
+    const standardIndustries = industryRes.rows.filter(
+      (ind) => ind.association_type !== "Sponsored" || ind.industry_name !== grantSponsorName
+    );
+
+    // Compile the final payload
+    const payload = {
+      project_id: project.project_id,
+      project_title: project.project_title,
+      abstract: project.abstract,
+      academic_year: project.academic_year,
+      group_id: project.group_id,
+      domains: domainRes.rows,
+      faculty: facultyRes.rows,
+      industries: standardIndustries,
+      grant: grantRes.rows.length > 0 ? grantRes.rows[0] : null,
+      resources: resourceRes.rows,
+    };
+
+    return res.status(200).json(new ApiResponse(200, payload, "Project fetched successfully."));
+  } catch (error: any) {
+    console.error("Error fetching project by ID:", error);
+    return next(new ApiError(500, "Internal Server Error", "Failed to fetch project details."));
+  } finally {
+    client.release();
+  }
+}
+
 // GET /api/v1/projects/getProjects
 export async function getProjects(req: Request, res: Response, next: NextFunction) {
   let limit = 10;
@@ -35,11 +123,19 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
         conditionQuery += ` AND (
           ARRAY(
             SELECT domain_id FROM project_domain WHERE project_id = p.project_id
-          )::varchar[] @> $${paramCounter}::varchar[]
-        )`;
-        queryParams.push(domainIdsArray);
-        paramCounter++;
-      }
+            )::varchar[] @> $${paramCounter}::varchar[]
+            )`;
+            queryParams.push(domainIdsArray);
+            paramCounter++;
+          }
+        }
+
+    //  Archive Toggle Logic
+    if (req.query.isDeleted === 'true') {
+      conditionQuery += ` AND p.is_deleted = true`;
+    } else {
+      // Default behavior: only show active projects
+      conditionQuery += ` AND p.is_deleted = false`;
     }
 
     // Filter: Department Abbreviation
@@ -601,5 +697,225 @@ export async function createProject(req: Request, res: Response, next: NextFunct
     );
   } finally {
     client.release();
+  }
+}
+
+export async function updateProject(req: Request, res: Response, next: NextFunction) {
+  const projectId = req.params.projectId;
+
+  // Extract Optional Files
+  const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+  const reportFile = files?.reportFile?.[0];
+  const resourceFile = files?.resourceFile?.[0];
+
+  // Parse Text Data
+  const {
+    projectTitle,
+    abstract,
+    academicYear,
+    groupId,
+    grantIndustryName,
+    grantName,
+    grantAmount,
+    recievedDate
+  } = req.body;
+
+  let domainIds: string[] = [];
+  let facultySupervisors: { userId: string; role: string; remark?: string }[] = [];
+  let industries: { industryName: string; associationType: string; extEmail: string }[] = [];
+
+  try {
+    if (req.body.domainIds) domainIds = JSON.parse(req.body.domainIds);
+    if (req.body.facultySupervisors) facultySupervisors = JSON.parse(req.body.facultySupervisors);
+    if (req.body.industries) industries = JSON.parse(req.body.industries);
+  } catch (e) {
+    return next(new ApiError(400, "Bad Request", "Invalid JSON format for arrays."));
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const projCheck = await client.query(`SELECT project_id FROM projects WHERE project_id = $1`, [projectId]);
+    if (projCheck.rows.length === 0) throw new Error("PROJECT_NOT_FOUND");
+
+    const currentGroupRes = await client.query(`SELECT group_id FROM groups WHERE project_id = $1`, [projectId]);
+    const currentGroupId = currentGroupRes.rows.length > 0 ? currentGroupRes.rows[0].group_id : null;
+
+    if (currentGroupId !== groupId) {
+      const checkNewGroup = await client.query(`SELECT project_id FROM groups WHERE group_id = $1`, [groupId]);
+      if (checkNewGroup.rows.length === 0) throw new Error("GROUP_NOT_FOUND");
+      if (checkNewGroup.rows[0].project_id !== null && checkNewGroup.rows[0].project_id !== projectId) {
+        throw new Error("GROUP_ALREADY_ASSIGNED");
+      }
+      await client.query(`UPDATE groups SET project_id = NULL WHERE project_id = $1`, [projectId]);
+      await client.query(`UPDATE groups SET project_id = $1 WHERE group_id = $2`, [projectId, groupId]);
+    }
+
+    let deptAbbr = null;
+    if (domainIds.length > 0) {
+      const deptRes = await client.query(`SELECT dept_abbreviation FROM domains WHERE domain_id = $1`, [domainIds[0]]);
+      if (deptRes.rows.length > 0) deptAbbr = deptRes.rows[0].dept_abbreviation;
+    }
+
+    await client.query(
+      `UPDATE projects SET project_title = $1, abstract = $2, academic_year = $3, dept_abbreviation = COALESCE($4, dept_abbreviation) WHERE project_id = $5`,
+      [projectTitle, abstract, academicYear, deptAbbr, projectId]
+    );
+
+    await client.query(`DELETE FROM project_domain WHERE project_id = $1`, [projectId]);
+    await client.query(`DELETE FROM project_faculty WHERE project_id = $1`, [projectId]);
+    await client.query(`DELETE FROM project_industry WHERE project_id = $1`, [projectId]);
+    await client.query(`DELETE FROM project_external WHERE project_id = $1`, [projectId]);
+    await client.query(`DELETE FROM grants WHERE project_id = $1`, [projectId]);
+
+    for (const domainId of domainIds) {
+      await client.query(`INSERT INTO project_domain (project_id, domain_id) VALUES ($1, $2);`, [projectId, domainId]);
+    }
+    for (const faculty of facultySupervisors) {
+      await client.query(
+        `INSERT INTO project_faculty (project_id, faculty_id, supervisory_role, remark) VALUES ($1, $2, $3, $4);`,
+        [projectId, faculty.userId, faculty.role, faculty.remark || null]
+      );
+    }
+
+    const linkedIndustryIds = new Set();
+    for (const ind of industries) {
+      if (!ind.industryName) continue;
+
+      const indRes = await client.query(`SELECT industry_id FROM industry WHERE industry_name = $1`, [ind.industryName]);
+      if (indRes.rows.length === 0) throw new Error(`INDUSTRY_NOT_FOUND:${ind.industryName}`);
+      const industryId = indRes.rows[0].industry_id;
+
+      await client.query(
+        `INSERT INTO project_industry (project_id, industry_id, association_type) VALUES ($1, $2, $3);`,
+        [projectId, industryId, ind.associationType || "Partner"]
+      );
+      linkedIndustryIds.add(industryId);
+
+      if (ind.extEmail) {
+        await client.query(`INSERT INTO project_external (project_id, ext_email, industry_feedback) VALUES ($1, $2, NULL);`, [projectId, ind.extEmail]);
+      }
+    }
+
+    if (grantIndustryName && grantName) {
+      const grantIndRes = await client.query(`SELECT industry_id FROM industry WHERE industry_name = $1`, [grantIndustryName]);
+      if (grantIndRes.rows.length === 0) throw new Error(`INDUSTRY_NOT_FOUND:${grantIndustryName}`);
+      const grantIndustryId = grantIndRes.rows[0].industry_id;
+
+      if (!linkedIndustryIds.has(grantIndustryId)) {
+        await client.query(
+          `INSERT INTO project_industry (project_id, industry_id, association_type) VALUES ($1, $2, $3);`,
+          [projectId, grantIndustryId, "Sponsored"]
+        );
+      }
+      await client.query(
+        `INSERT INTO grants (project_id, grant_name, recieved_date, grant_amount, industry_id) VALUES ($1, $2, $3, $4, $5);`,
+        [projectId, grantName, recievedDate || null, grantAmount || null, grantIndustryId]
+      );
+    }
+
+    const safeTitle = projectTitle.replace(/[^a-zA-Z0-9]/g, "_");
+    const basePath = `projects/${academicYear}/${projectId}_${safeTitle}`;
+
+    if (reportFile) {
+      const reportPath = `${basePath}/${reportFile.originalname}`;
+      await supabase.storage.from("project-resources").upload(reportPath, reportFile.buffer, { contentType: reportFile.mimetype, upsert: true });
+      const reportUrl = supabase.storage.from("project-resources").getPublicUrl(reportPath).data.publicUrl;
+
+      await client.query(`DELETE FROM resources WHERE project_id = $1 AND resource_name = 'Report'`, [projectId]);
+      await client.query(`INSERT INTO resources (project_id, resource_name, resource_path, mime_type) VALUES ($1, $2, $3, $4);`, [projectId, "Report", reportUrl, reportFile.mimetype]);
+    }
+
+    if (resourceFile) {
+      const zipPath = `${basePath}/${resourceFile.originalname}`;
+      await supabase.storage.from("project-resources").upload(zipPath, resourceFile.buffer, { contentType: resourceFile.mimetype, upsert: true });
+      const zipUrl = supabase.storage.from("project-resources").getPublicUrl(zipPath).data.publicUrl;
+
+      await client.query(`DELETE FROM resources WHERE project_id = $1 AND resource_name = 'Source Code / Assets'`, [projectId]);
+      await client.query(`INSERT INTO resources (project_id, resource_name, resource_path, mime_type) VALUES ($1, $2, $3, $4);`, [projectId, "Source Code / Assets", zipUrl, resourceFile.mimetype]);
+    }
+
+    await client.query("COMMIT");
+
+    return res.status(200).json(new ApiResponse(200, { projectId }, "Project updated successfully."));
+  } catch (error: any) {
+    await client.query("ROLLBACK");
+    console.error("Update Transaction Failed:", error);
+
+    if (error.message === "PROJECT_NOT_FOUND") return next(new ApiError(404, "Not Found", "Project not found."));
+    if (error.message === "GROUP_ALREADY_ASSIGNED") return next(new ApiError(409, "Conflict", "The selected group is already assigned to another project."));
+    if (error.message === "GROUP_NOT_FOUND") return next(new ApiError(404, "Not Found", "Provided Group ID does not exist."));
+    if (error.message.startsWith("INDUSTRY_NOT_FOUND")) return next(new ApiError(404, "Not Found", `Industry '${error.message.split(":")[1]}' does not exist.`));
+
+    return next(new ApiError(500, "Internal Server Error", "Failed to update project."));
+  } finally {
+    client.release();
+  }
+}
+
+export async function archiveProject(req: Request, res: Response, next: NextFunction) {
+  const projectId = req.params.projectId;
+
+  if (!projectId) { return next(new ApiError(400, "Bad Request", "Project ID is required.")); }
+
+  try {
+    const result = await pool.query(
+      `UPDATE projects SET is_deleted = true WHERE project_id = $1 AND is_deleted = false RETURNING project_id, project_title`,
+      [projectId]
+    );
+
+    if (result.rowCount === 0) {
+      return next(new ApiError(404, "Not Found", "Project not found or already archived."));
+    }
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          result.rows[0],
+          `Project '${result.rows[0].project_title}' archived successfully.`
+        )
+      );
+  } catch (error) {
+    console.error("Error archiving project:", error);
+    return next(new ApiError(500, "Internal Server Error", "Failed to archive project."));
+  }
+}
+
+export async function restoreProject(req: Request, res: Response, next: NextFunction) {
+  const projectId = req.params.projectId;
+
+  if (!projectId) {
+    return next(new ApiError(400, "Bad Request", "Project ID is required."));
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE projects
+       SET is_deleted = false
+       WHERE project_id = $1 AND is_deleted = true
+       RETURNING project_id, project_title`,
+      [projectId]
+    );
+
+    if (result.rowCount === 0) {
+      return next(new ApiError(404, "Not Found", "Project not found or is already active."));
+    }
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          result.rows[0],
+          `Project '${result.rows[0].project_title}' restored successfully.`
+        )
+      );
+  } catch (error) {
+    console.error("Error restoring project:", error);
+    return next(new ApiError(500, "Internal Server Error", "Failed to restore project."));
   }
 }
