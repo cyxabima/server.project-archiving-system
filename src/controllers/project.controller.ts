@@ -194,6 +194,21 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
       }
     }
 
+    // Filter: Academic Year Range (Handles the 'from' and 'to' from Sidebar)
+    if (req.query.from && req.query.to) {
+      conditionQuery += ` AND p.academic_year >= $${paramCounter} AND p.academic_year <= $${paramCounter + 1}`;
+      queryParams.push(req.query.from, req.query.to);
+      paramCounter += 2;
+    } else if (req.query.from) {
+      conditionQuery += ` AND p.academic_year >= $${paramCounter}`;
+      queryParams.push(req.query.from);
+      paramCounter++;
+    } else if (req.query.to) {
+      conditionQuery += ` AND p.academic_year <= $${paramCounter}`;
+      queryParams.push(req.query.to);
+      paramCounter++;
+    }
+
     // Filter: Global Search
     if (req.query.search && typeof req.query.search === "string") {
       conditionQuery += ` AND (
