@@ -159,6 +159,21 @@ export async function getProjects(req: Request, res: Response, next: NextFunctio
       paramCounter++;
     }
 
+    // Filter: Academic Year Range (Handles the 'from' and 'to' from Sidebar)
+    if (req.query.from && req.query.to) {
+      conditionQuery += ` AND p.academic_year >= $${paramCounter} AND p.academic_year <= $${paramCounter + 1}`;
+      queryParams.push(req.query.from, req.query.to);
+      paramCounter += 2;
+    } else if (req.query.from) {
+      conditionQuery += ` AND p.academic_year >= $${paramCounter}`;
+      queryParams.push(req.query.from);
+      paramCounter++;
+    } else if (req.query.to) {
+      conditionQuery += ` AND p.academic_year <= $${paramCounter}`;
+      queryParams.push(req.query.to);
+      paramCounter++;
+    }
+
     // Filter: Domain Name
     if (req.query.domainName && typeof req.query.domainName === "string") {
       conditionQuery += ` AND d_main.domain_name ILIKE $${paramCounter}`;

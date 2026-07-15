@@ -1,0 +1,25 @@
+import jwt from "jsonwebtoken";
+import ApiError from "../utils/ApiError.js";
+export const verifyToken = (req, res, next) => {
+    const token = req.cookies.token;
+    if (!token) {
+        return next(new ApiError(401, "Unauthorized", "Access denied. No token provided."));
+    }
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
+    }
+    catch (error) {
+        return next(new ApiError(403, "Forbidden", "Invalid or expired token."));
+    }
+};
+export const isAdmin = (req, res, next) => {
+    if (!req.user) {
+        return next(new ApiError(401, "Unauthorized", "Authentication required"));
+    }
+    if (req.user.role !== "admin") {
+        return next(new ApiError(403, "Forbidden", "Access denied. Admin privileges required."));
+    }
+    next();
+};

@@ -1,0 +1,228 @@
+import pool from "../db/index.js";
+import ApiError from "../utils/ApiError.js";
+import ApiResponse from "../utils/ApiResponse.js";
+import { DbErrorCodes } from "../utils/DbError.js";
+// POST /api/v1/groups
+export async function createGroup(req, res, next) {
+    if (!req.body || Object.keys(req.body).length === 0) {
+        return next(new ApiError(422, "Unprocessable Entity", "Body is missing"));
+    }
+    const { groupLeader, member2, member3, member4, projectId } = req.body;
+    if (!groupLeader) {
+        return next(new ApiError(422, "Unprocessable Entity", "Group Leader is required"));
+    }
+    // filtering out undefined/null
+    const proposedMembers = [groupLeader, member2, member3, member4].filter(Boolean);
+    // killign duplicate
+    const uniqueMembers = new Set(proposedMembers);
+    if (uniqueMembers.size !== proposedMembers.length) {
+        return next(new ApiError(400, "Bad Request", "A student cannot occupy multiple roles within the same group"));
+    }
+    try {
+        // checking if any of these students exist in ANY group columns
+        const checkQuery = `
+            SELECT group_id FROM groups 
+            WHERE group_leader = ANY($1) 
+               OR member_2 = ANY($1) 
+               OR member_3 = ANY($1) 
+               OR member_4 = ANY($1);
+        `;
+        const checkResult = await pool.query(checkQuery, [proposedMembers]);
+        if (checkResult.rowCount && checkResult.rowCount > 0) {
+            return next(new ApiError(409, "Conflict", "One or more of the provided students are already assigned to a group"));
+        }
+        const insertQuery = `
+    INSERT INTO groups (group_leader, member_2, member_3, member_4, project_id)
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING 
+        group_id AS "groupId",
+        group_leader AS "groupLeader", 
+        member_2 AS "member2", 
+        member_3 AS "member3", 
+        member_4 AS "member4", 
+        project_id AS "projectId";
+    `;
+        const result = await pool.query(insertQuery, [
+            groupLeader,
+            member2 || null,
+            member3 || null,
+            member4 || null,
+            projectId || null
+        ]);
+        return res.status(201).json(new ApiResponse(201, result.rows[0], "Group created successfully"));
+    }
+    catch (err) {
+        const error = err;
+        if (error.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) {
+            return next(new ApiError(409, "Conflict", "One or more Seat Numbers or the Project ID do not exist"));
+        }
+        console.error("Group Creation Error:", error);
+        return next(new ApiError(500, "Database Error", "Failed to create group"));
+    }
+}
+// PATCH /api/v1/groups/:groupId
+export async function updateGroup(req, res, next) {
+    if (!req.body || Object.keys(req.body).length === 0) {
+        return next(new ApiError(422, "Unprocessable Entity", "Body is missing"));
+    }
+    const { groupId } = req.params;
+    const { groupLeader, member2, member3, member4, projectId } = req.body;
+    const proposedMembers = [groupLeader, member2, member3, member4].filter(Boolean);
+    if (proposedMembers.length > 0) {
+        // Node.js Intra-group duplicate check
+        const uniqueMembers = new Set(proposedMembers);
+        if (uniqueMembers.size !== proposedMembers.length) {
+            return next(new ApiError(400, "Bad Request", "A student cannot occupy multiple roles within the same group"));
+        }
+    }
+    try {
+        if (proposedMembers.length > 0) {
+            // check but excluding the current group we are updating
+            const checkQuery = `
+                SELECT group_id FROM groups 
+                WHERE group_id != $2 AND (
+                    group_leader = ANY($1) OR member_2 = ANY($1) OR 
+                    member_3 = ANY($1) OR member_4 = ANY($1)
+                );
+            `;
+            const checkResult = await pool.query(checkQuery, [proposedMembers, groupId]);
+            if (checkResult.rowCount && checkResult.rowCount > 0) {
+                return next(new ApiError(409, "Conflict", "One or more students are already assigned to a DIFFERENT group"));
+            }
+        }
+        const updateQuery = `
+            UPDATE groups 
+            SET group_leader = COALESCE($1, group_leader),
+                member_2 = COALESCE($2, member_2),
+                member_3 = COALESCE($3, member_3),
+                member_4 = COALESCE($4, member_4),
+                project_id = COALESCE($5, project_id)
+            WHERE group_id = $6
+            RETURNING *;
+        `;
+        const result = await pool.query(updateQuery, [
+            groupLeader,
+            member2,
+            member3,
+            member4,
+            projectId,
+            groupId
+        ]);
+        if (result.rowCount === 0) {
+            return next(new ApiError(404, "Not Found", "Group not found"));
+        }
+        return res.status(200).json(new ApiResponse(200, result.rows[0], "Group updated successfully"));
+    }
+    catch (err) {
+        const error = err;
+        if (error.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) {
+            return next(new ApiError(409, "Conflict", "One or more Seat Numbers or the Project ID do not exist"));
+        }
+        console.error("Group Update Error:", error);
+        return next(new ApiError(500, "Database Error", "Failed to update group"));
+    }
+}
+// GET /api/v1/groups
+export async function getGroups(req, res, next) {
+    // Default pagination values
+    let limit = 20;
+    let offset = 0;
+    if (req.query.limit) {
+        limit = parseInt(req.query.limit, 10);
+        if (isNaN(limit))
+            limit = 20;
+    }
+    if (req.query.offset) {
+        offset = parseInt(req.query.offset, 10);
+        if (isNaN(offset))
+            offset = 0;
+    }
+    try {
+        let conditionQuery = `WHERE 1=1`;
+        const queryParams = [];
+        let paramCounter = 1;
+        // Search Parameter (case-insensitive partial match across group ID and all members)
+        if (req.query.search) {
+            const searchTerm = `%${req.query.search}%`;
+            conditionQuery += ` AND (
+        group_id::text ILIKE $${paramCounter} OR 
+        group_leader ILIKE $${paramCounter} OR 
+        member_2 ILIKE $${paramCounter} OR 
+        member_3 ILIKE $${paramCounter} OR 
+        member_4 ILIKE $${paramCounter}
+      )`;
+            queryParams.push(searchTerm);
+            paramCounter++;
+        }
+        // Filter = Project ID
+        if (req.query.projectId) {
+            conditionQuery += ` AND project_id = $${paramCounter}`;
+            queryParams.push(req.query.projectId);
+            paramCounter++;
+        }
+        // Filter = Student SeatNo. (in any member slot)
+        if (req.query.seatNo) {
+            conditionQuery += ` AND (group_leader = $${paramCounter} OR member_2 = $${paramCounter} OR member_3 = $${paramCounter} OR member_4 = $${paramCounter})`;
+            queryParams.push(req.query.seatNo);
+            paramCounter++;
+        }
+        const dataQuery = `
+      SELECT group_id, group_leader, member_2, member_3, member_4, project_id
+      FROM groups
+      ${conditionQuery}
+      ORDER BY group_id ASC
+      LIMIT $${paramCounter} OFFSET $${paramCounter + 1};
+    `;
+        const countQuery = `
+      SELECT COUNT(*) 
+      FROM groups
+      ${conditionQuery};
+    `;
+        const dataParams = [...queryParams, limit, offset];
+        const [dataResult, countResult] = await Promise.all([
+            pool.query(dataQuery, dataParams),
+            pool.query(countQuery, queryParams)
+        ]);
+        // Calculate pagination metadata
+        const totalRecords = parseInt(countResult.rows[0].count, 10);
+        const totalPages = Math.ceil(totalRecords / limit);
+        const currentPage = Math.floor(offset / limit) + 1;
+        const responsePayload = {
+            data: dataResult.rows,
+            meta: {
+                currentPage,
+                totalPages,
+                totalRecords
+            }
+        };
+        return res
+            .status(200)
+            .json(new ApiResponse(200, responsePayload, "Groups fetched successfully"));
+    }
+    catch (error) {
+        console.error("Error fetching groups:", error);
+        return next(new ApiError(500, "Internal Server Error", "Failed to fetch groups"));
+    }
+}
+export async function deleteGroup(req, res, next) {
+    const { groupId } = req.params;
+    try {
+        const query = `
+      DELETE FROM groups 
+      WHERE group_id = $1 
+      RETURNING group_id;
+    `;
+        const result = await pool.query(query, [groupId]);
+        if (result.rowCount === 0) {
+            return next(new ApiError(404, "Not Found", "Group not found"));
+        }
+        return res.status(200).json(new ApiResponse(200, null, "Group deleted successfully"));
+    }
+    catch (err) {
+        if (err.code === DbErrorCodes.FOREIGN_KEY_VIOLATION) {
+            return next(new ApiError(409, "Conflict", "Cannot delete group because it is currently assigned to a project or evaluation."));
+        }
+        console.error("Delete Group Error:", err);
+        return next(new ApiError(500, "Database Error", "Failed to delete group"));
+    }
+}
